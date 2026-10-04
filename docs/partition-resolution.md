@@ -17,8 +17,16 @@ The CLI and poll loop are not wired to this interface.
   declarations. Both named columns must exist in these caller declarations
   with exactly the type `TIMESTAMP`. Declarations are trusted input, not
   verification of an actual table schema.
-- Only `granularity="day"` and UTC day boundaries are supported. Column,
-  dataset, and table names must match `[A-Za-z_][A-Za-z0-9_]*`; the project
+- Only `granularity="day"` and `partition_time_zone="UTC"` are supported.
+  The timezone declaration is **required**, with no default or inference;
+  existing callers must add it. Omitting it raises `TypeError`, and any value
+  other than the exact string `"UTC"` raises `ValueError` naming issue #37,
+  including equivalent aliases such as `"Etc/UTC"`. Both granularity and the
+  declaration are validated before discovery rendering or window resolution.
+  The actual table's partition expression is **trusted**, not read or verified:
+  callers must establish that its day boundary is UTC before declaring it.
+  Misdeclaring a non-UTC table as UTC can still yield incorrect days.
+- Column, dataset, and table names must match `[A-Za-z_][A-Za-z0-9_]*`; the project
   component also permits hyphens after the first character. Expressions,
   wildcard tables, nested paths, backticks inside names, and arbitrary SQL
   are rejected. References must match declared column casing exactly;
@@ -50,6 +58,7 @@ config = PartitionConfig(
     table="project_x.dataset_a.table_orders",
     change_column="last_upd_ts",
     partition_column="order_sold_ts",
+    partition_time_zone="UTC",
     columns=(
         ColumnSpec("last_upd_ts", "TIMESTAMP"),
         ColumnSpec("order_sold_ts", "TIMESTAMP"),
@@ -103,14 +112,13 @@ use `discovery_required` to skip unnecessary discovery.
 
 ## Known limits found by audit #25
 
-Two defects are open against this module; both are tracked with witnesses in
-`tests/audit/test_partition_audit.py`.
+Issue #37 is addressed by requiring an explicit UTC declaration and rejecting
+other declarations on both paths; `tests/audit/test_partition_audit.py` retains
+the synthetic boundary witnesses as passing refusal tests and UTC controls.
+This does not verify the caller's statement about the physical table.
 
-- The resolved days are **UTC** days and `PartitionConfig` cannot express the
-  table's partition day boundary. For a table partitioned by
-  `DATE(order_sold_ts, 'America/New_York')` (or any non-UTC zone) the selection
-  silently misses the partition that holds a changed row. Only `granularity` is
-  enforced; the UTC assumption is trusted, not checked. See #37.
+The wide-window performance finding remains open:
+
 - A contiguous window is materialized one `date` per day before being collapsed
   back into a single `DayRange`, so a wide window (a first run with no stored
   watermark) costs seconds and hundreds of megabytes. See #38.

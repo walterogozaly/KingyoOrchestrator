@@ -19,6 +19,7 @@ CONFIG = PartitionConfig(
     table="project_x.dataset_a.table_orders",
     change_column="last_upd_ts",
     partition_column="order_sold_ts",
+    partition_time_zone="UTC",
     columns=(ColumnSpec("last_upd_ts", "TIMESTAMP"), ColumnSpec("order_sold_ts", "TIMESTAMP")),
 )
 SINCE = datetime(2026, 1, 1, tzinfo=UTC)
@@ -236,6 +237,24 @@ def test_both_columns_require_explicit_timestamp_types(column, data_type):
 def test_invalid_window(since, until, message):
     with pytest.raises(ValueError, match=message):
         ChangeWindow(since, until)
+
+
+@pytest.mark.parametrize(
+    "zone", ["America/New_York", "Asia/Tokyo", "Etc/UTC", "utc", "", None, True, 42]
+)
+def test_partition_day_boundary_requires_exact_utc_declaration(zone):
+    with pytest.raises(ValueError, match=r"partition_time_zone.*UTC.*#37"):
+        replace(CONFIG, partition_time_zone=zone)
+
+
+def test_partition_day_boundary_cannot_be_omitted():
+    with pytest.raises(TypeError, match="partition_time_zone"):
+        PartitionConfig(
+            table=CONFIG.table,
+            change_column=CONFIG.change_column,
+            partition_column=CONFIG.partition_column,
+            columns=CONFIG.columns,
+        )
 
 
 def test_config_and_window_are_frozen():
