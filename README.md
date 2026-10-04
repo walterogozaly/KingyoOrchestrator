@@ -5,8 +5,9 @@ Dataform, and KumoSQL. Python is the initial implementation choice because the
 adjacent tooling and metadata clients already use it.
 
 The starter includes packaging, a local configuration validator, an offline
-metadata interface with a fake reader, tests, and CI.
-Cloud integrations, polling, dependency planning, and execution are future work.
+metadata interface with a fake reader, offline day-partition resolution, tests,
+and CI.
+Cloud integrations, polling, dependency graph planning, and execution are future work.
 All current commands run locally without credentials or cloud calls.
 
 ## Start working
@@ -32,16 +33,18 @@ and `cp` in place of `Copy-Item`.
 
 ```text
 src/kingyo_orchestrator/  Python package, CLI, and configuration
-tests/                   Offline configuration, CLI, and metadata checks
+tests/                   Offline configuration, CLI, metadata, and partition checks
 config/                  Public example settings; local settings are ignored
 docs/                    Architecture and initial work sequence
 .github/workflows/       Lint, tests, and package build checks
 ```
 
-As implementation grows, add `core/` for orchestration decisions, `adapters/`
-for external services, and `state/` for checkpoint persistence inside the package.
+`core/` contains offline partition decisions, and `adapters/` renders discovery
+SQL as strings. Future integrations can extend adapters; checkpoint persistence
+will live under `state/`.
 See [architecture](docs/architecture.md), the [metadata interface](docs/metadata.md),
-and the [initial roadmap](docs/roadmap.md).
+the [partition resolver and cost limits](docs/partition-resolution.md), and the
+[initial roadmap](docs/roadmap.md).
 
 ## Verify changes
 
