@@ -1,0 +1,70 @@
+{
+  "trials": [
+    {
+      "scenario": "case_a",
+      "seed": 0,
+      "status": "faster",
+      "baseline": {
+        "rows_scanned": 100,
+        "seconds": 2
+      },
+      "candidate": {
+        "rows_scanned": 50,
+        "seconds": 1
+      },
+      "detail": ""
+    },
+    {
+      "scenario": "case_a",
+      "seed": 1,
+      "status": "same",
+      "baseline": {
+        "rows_scanned": 100,
+        "seconds": 2
+      },
+      "candidate": {
+        "rows_scanned": 100,
+        "seconds": 2
+      },
+      "detail": ""
+    },
+    {
+      "scenario": "case_b",
+      "seed": 0,
+      "status": "slower",
+      "baseline": {
+        "rows_scanned": 100,
+        "seconds": 2
+      },
+      "candidate": {
+        "rows_scanned": 200,
+        "seconds": 4
+      },
+      "detail": ""
+    },
+    {
+      "scenario": "case_b",
+      "seed": 1,
+      "status": "incorrect",
+      "baseline": {
+        "rows_scanned": 100
+      },
+      "candidate": {
+        "rows_scanned": 1
+      },
+      "detail": "duplicate row"
+    },
+    {
+      "scenario": "case_c",
+      "seed": 0,
+      "status": "failed",
+      "detail": "candidate raised ValueError"
+    },
+    {
+      "scenario": "case_d",
+      "seed": 0,
+      "status": "unsupported",
+      "detail": "missing capability"
+    }
+  ]
+}

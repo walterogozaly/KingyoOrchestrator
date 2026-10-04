@@ -1,0 +1,5 @@
+config { type: "table", bigquery: { partitionBy: "DATE(last_upd_ts)" } }
+
+select order_id, customer_id, amount, status, order_date, last_upd_ts
+from ${ref("orders")}
+where status != 'test'

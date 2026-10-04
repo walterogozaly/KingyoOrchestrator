@@ -1,0 +1,9 @@
+config { type: "table", bigquery: { partitionBy: "DATE(last_upd_ts)" } }
+
+with base as (
+  select * from ${ref("orders")} where status != 'test'
+),
+slim as (
+  select order_id, customer_id, amount, last_upd_ts from base where amount > 5
+)
+select * from slim

@@ -1,0 +1,4 @@
+config { type: "table", bigquery: { partitionBy: "order_date" } }
+
+with b as (select order_id, order_date, amount from ${ref("orders")})
+select * from b

@@ -1,0 +1,3 @@
+config { type: "table" }
+
+select segment, sum(amount) as revenue from ${ref("orders_enriched")} group by segment
