@@ -5,8 +5,9 @@ Dataform, and KumoSQL. Python is the initial implementation choice because the
 adjacent tooling and metadata clients already use it.
 
 The starter includes packaging, a local configuration validator, an offline
-metadata interface with a fake reader, offline day-partition resolution, compiled
-Dataform graph ingestion, tests, and CI.
+metadata interface with a fake reader, offline day-partition resolution, local
+snapshot persistence and comparison, compiled Dataform graph ingestion, tests,
+and CI.
 Cloud integrations, polling, dependency graph planning, and execution are future work.
 All current commands run locally without credentials or cloud calls.
 
@@ -33,19 +34,18 @@ and `cp` in place of `Copy-Item`.
 
 ```text
 src/kingyo_orchestrator/  Python package, CLI, and configuration
-tests/                   Offline configuration, CLI, metadata, partition, and graph checks
+tests/                   Offline configuration, CLI, metadata, partition, state, and graph checks
 config/                  Public example settings; local settings are ignored
 docs/                    Architecture and initial work sequence
 .github/workflows/       Lint, tests, and package build checks
 ```
 
-`core/` contains offline partition decisions, and `adapters/` renders discovery
-SQL as strings. Future integrations can extend adapters; checkpoint persistence
-will live under `state/`.
+`core/` contains pure change comparison and offline partition decisions;
+`adapters/` renders discovery SQL as strings, and `state/` persists local checkpoints.
 See [architecture](docs/architecture.md), the [metadata interface](docs/metadata.md),
 the [partition resolver and cost limits](docs/partition-resolution.md),
-the [compiled graph interface](docs/compiled-graph.md), and the
-[initial roadmap](docs/roadmap.md).
+the [snapshot state format](docs/state.md), the [compiled graph interface](docs/compiled-graph.md),
+and the [initial roadmap](docs/roadmap.md).
 
 ## Verify changes
 
