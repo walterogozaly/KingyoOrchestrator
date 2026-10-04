@@ -19,3 +19,51 @@ Scenarios: unchanged_no_signal, unchanged_resignal, new_day, backfill_7_days, la
 dimension_change, source_column_added, edge_mix (NULLs, unmatched key, moved dates, filtered-out rows), model_sql_change (unsupported yet, kept visible).
 Separate tracks (not mixed here): SQL-only rewrites, layout/materialization changes. Delegable pieces: see SOL_ISSUES.md.
 BenchBox verdict so far: usable as the SSB data generator (pinned 0.4.1, beta, emits a version-inconsistency warning); its runner/BigQuery driver is not used.
+
+## Reports from saved trials
+
+```shell
+python -m bench.report bench/results/run1.json > report.md
+python -m bench.report bench/results/run2.json --baseline-json bench/results/run1.json > comparison.md
+python -m bench.report bench/results/run2.json --metrics rows_scanned seconds --faster-threshold 0.9 --slower-threshold 1.1
+python -m pytest bench -q
+```
+
+Reporting needs only Python's standard library and reads local JSON; it does not run
+the harness, open a database, or contact BigQuery. From Python use
+`format_report(trials, metrics=("rows_scanned", "seconds"))` from `bench.report`;
+optional keywords are `baseline_trials`, `faster_threshold`, and `slower_threshold`.
+The previous run's trials are distinct from the baseline side of each paired trial.
+
+Every scenario and non-correct trial remains visible. Only input statuses
+`faster`, `same`, and `slower` contribute to ratios; `incorrect`, `failed`, and
+`unsupported` never receive speed credit. Correct trials are classified against
+the first requested metric with both baseline and candidate values, or retain
+their supplied status if none is available. Default thresholds are faster below
+0.95 and slower above 1.05; boundary values count as same.
+
+Metric cells show the geometric mean of candidate / baseline ratios, minimum,
+maximum, reciprocal speedup, and contributing trial count. Default metrics are
+`rows_scanned`, `seconds`, `statements`, `total_slot_ms`, `bytes_processed`, and
+`bytes_billed`. Metrics absent on either side are excluded from that metric's
+average; columns without any paired values are omitted. Metrics present only on non-correct
+trials remain visible with no average. No
+legacy `scan_ratio` or `time_ratio` field is needed. Negative, non-finite, or
+non-numeric comparable values are rejected.
+
+Zero / zero counts as ratio 1. Positive work against a zero baseline is assigned
+ratio 1,000,000, so it never receives speed credit. Other ratios below 1e-6 are
+clamped to 1e-6 before logarithms; resulting speedups are capped at 1,000,000x.
+The report therefore keeps zero-work cases finite and visible.
+
+Previous-run comparisons use each scenario's correct-trial geometric mean for
+each available metric. Negative percentage changes mean improvement. Regressions
+include ratios increasing by more than `slower_threshold - 1` (default 5%),
+increased incorrect/failed counts, and scenarios missing from the current run.
+New scenarios and unavailable metric pairs show `-` instead of fabricated deltas.
+These are descriptive comparisons, without statistical significance claims;
+compare equivalent scenario/seed populations for meaningful conclusions.
+
+The harness's existing inline summary remains unchanged; this command formats
+its saved JSON independently. Report tests are included in the normal pytest run
+and require no optional benchmark dependencies.

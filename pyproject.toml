@@ -21,7 +21,7 @@ kingyo = "kingyo_orchestrator.cli:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "bench"]
 pythonpath = ["src"]
 
 [tool.ruff]

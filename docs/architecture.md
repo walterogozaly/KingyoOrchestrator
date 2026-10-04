@@ -44,3 +44,10 @@ by changing a default setting.
 
 Store credentials through provider-supported mechanisms outside the repository.
 Public examples use placeholders, and local environment notes stay ignored.
+
+## Offline benchmark reporting
+
+`bench.report` consumes saved trial dictionaries and formats Markdown using only the
+standard library. It calculates ratios and speedups for correct trials, lists every
+non-correct case, and compares prior runs. It is separate from database execution,
+provider adapters, and the orchestrator package; see [report usage](../bench/README.md).
