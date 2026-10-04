@@ -6,8 +6,11 @@ an update today can affect an order sold months ago. The change window alone
 cannot identify the affected days.
 
 Kingyo separates pure decisions in `core/partitions.py` from BigQuery-specific
-SQL rendering in `adapters/bigquery_discovery.py`. Neither module opens a client,
-loads credentials, reads metadata, executes SQL, or rewrites downstream SQL.
+SQL rendering in `adapters/bigquery_discovery.py` and
+`adapters/bigquery_partition_filter.py`. None of these three modules opens a
+client, loads credentials, reads metadata, executes SQL, or rewrites full
+downstream SQL. The filter renderer returns predicate strings
+for a caller to insert explicitly.
 The CLI and poll loop are not wired to this interface.
 
 ## Supported input
@@ -15,7 +18,8 @@ The CLI and poll loop are not wired to this interface.
 - `PartitionConfig` is frozen and requires an explicit `project.dataset.table`,
   change column, partition column, and an immutable tuple of `ColumnSpec`
   declarations. Both named columns must exist in these caller declarations
-  with exactly the type `TIMESTAMP`. Declarations are trusted input, not
+  with change type exactly `TIMESTAMP` and partition type `DATE` or
+  `TIMESTAMP`. Declarations are trusted input, not
   verification of an actual table schema.
 - Only `granularity="day"` and UTC day boundaries are supported. Column,
   dataset, and table names must match `[A-Za-z_][A-Za-z0-9_]*`; the project
@@ -26,7 +30,7 @@ The CLI and poll loop are not wired to this interface.
 - `ChangeWindow(since, until)` requires timezone-aware datetimes, normalizes
   them to UTC, and describes `[since, until)`. Reversed windows are rejected;
   equal endpoints represent an empty window.
-- Missing columns, other types (including `DATE` and `DATETIME`), and other
+- Missing columns, other types (including `DATETIME`), and other
   granularities raise `ValueError`. The caller must establish a reliable
   change column; this slice does not infer one or detect deletes that leave
   no changed row.
@@ -73,8 +77,11 @@ assert selection.partitions == (date(2025, 3, 1), date(2025, 3, 2))
 assert selection.ranges == (DayRange(date(2025, 3, 1), date(2025, 3, 2)),)
 ```
 
-The renderer emits `SELECT DISTINCT TIMESTAMP_TRUNC(partition_column, DAY, 'UTC')`
-as `partition_start`, with `change_column >= since AND change_column < until`.
+For a `TIMESTAMP` partition column, discovery emits
+`SELECT DISTINCT TIMESTAMP_TRUNC(partition_column, DAY, 'UTC')` as
+`partition_start`. For a `DATE` partition column it selects the raw column
+`DISTINCT`, with no truncation or cast. Both use
+`change_column >= since AND change_column < until`.
 This uses BigQuery's [timestamp truncation](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/timestamp_functions#timestamp_trunc).
 The SQL includes microsecond-precision UTC timestamp literals and quotes validated
 identifiers. It has no partition-date restriction: adding a recent-date filter
@@ -101,6 +108,68 @@ Empty windows always return empty selections and require no discovery.
 The renderer itself remains callable and always returns a SQL string; callers
 use `discovery_required` to skip unnecessary discovery.
 
+## Literal downstream partition filters
+
+The two steps stay separate: render discovery SQL, then pass caller-supplied
+results through `resolve_partitions` and render the selected days as constants.
+`render_partition_filter(config, selection, alias=None)` in
+`adapters/bigquery_partition_filter.py` emits:
+
+- For DATE columns, an `IN (DATE '...', ...)` list on the raw column.
+- For TIMESTAMP columns, `column >= TIMESTAMP '...' AND column < TIMESTAMP '...'`
+  for each contiguous UTC day range. Disjoint ranges are joined with a
+  parenthesized OR, preserving gaps and safe composition with other predicates.
+- For an empty selection, `FALSE`, never an empty `IN ()` or an unrestricted filter.
+
+No subquery, join, CAST, or function wraps the filtered column. An optional alias
+must be a simple identifier; alias and column are quoted separately.
+The renderer follows this literal-only policy instead of generating expression
+filters whose pruning would need separate verification.
+
+The two single-range output shapes (`DATE '...'` in-list and one half-open
+`TIMESTAMP` range) are qualifying constant filters on the partition column and
+can enable [static partition pruning](https://docs.cloud.google.com/bigquery/docs/querying-partitioned-tables).
+The third shape, the parenthesized OR of disjoint ranges, is correct
+gap-preserving SQL but its pruning benefit is unverified: it is the typical output
+here, because gaps between late partitions are the point of the resolver, and
+BigQuery does not document OR-of-ranges as prunable.
+
+Continuing the offline example above with a DATE partition column:
+
+```python
+from dataclasses import replace
+
+from kingyo_orchestrator.adapters.bigquery_partition_filter import render_partition_filter
+
+config_date = replace(
+    config,
+    partition_column="partition_date",
+    columns=(ColumnSpec("last_upd_ts", "TIMESTAMP"), ColumnSpec("partition_date", "DATE")),
+)
+selection_date = resolve_partitions(config_date, window, [date(2026, 10, 2), date(2026, 10, 1)])
+filter_sql = render_partition_filter(config_date, selection_date, alias="T")
+assert filter_sql == "`T`.`partition_date` IN (\n  DATE '2026-10-01',\n  DATE '2026-10-02'\n)"
+```
+
+The renderer sorts/de-duplicates the actual `selection.partitions` and derives
+fresh ranges, ignoring any inconsistent caller-supplied range metadata.
+`select_partitions(days)` is the pure helper for building canonical selections
+from Python dates. Discovery continues to preserve NULL for explicit rejection.
+The same-column shortcut still applies only to TIMESTAMP declarations, since the
+change column must remain TIMESTAMP.
+
+More than **1,000 unique days** raises `ValueError` for either partition type;
+there is no silent truncation or broadening. Exactly 1,000 is supported. The caller
+must handle larger selections explicitly (for example, by batching a later
+approved operation). A TIMESTAMP selection containing `9999-12-31` also raises
+`ValueError`: its next-day exclusive upper bound is unrepresentable. DATE literals
+support that date directly.
+
+A planned later check is an authorized BigQuery dry run of the same synthetic
+query with and without the literal partition filter, comparing bytes processed.
+This issue performs neither dry runs nor query execution, and does not rewrite
+or run downstream models.
+
 ## Known limits found by audit #25
 
 Two defects are open against this module; both are tracked with witnesses in
@@ -114,6 +183,7 @@ Two defects are open against this module; both are tracked with witnesses in
 - A contiguous window is materialized one `date` per day before being collapsed
   back into a single `DayRange`, so a wide window (a first run with no stored
   watermark) costs seconds and hundreds of megabytes. See #38.
+
 
 ## Cost and caller responsibilities
 
