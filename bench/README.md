@@ -104,5 +104,52 @@ Tests are in `bench/test_compare.py`, offline, synthetic rows only.
 Not wired into the harness yet: `harness.compare` is unchanged and a follow-up PR from the harness owner
 swaps it for `compare_dag`.
 
+## Deterministic source variants
+
+List the seven available variants without importing DuckDB or generating data:
+
+```console
+python -m bench.variants --list
+python -m pytest bench/test_ssb_variants.py -q
+```
+
+`bench.ssb_variants.apply_variant(con, name, seed)` mutates only the five SSB source
+tables in a caller-owned **local DuckDB** connection. Load a fresh source copy for
+each variant/seed, apply the variant, then build the derived warehouse. This module
+does not call BenchBox, import a cloud client, or modify the harness.
+
+```python
+from bench.ssb_variants import apply_variant
+
+# con already contains sources from ssb_data.load_sources(con, data_directory).
+apply_variant(con, "nulls", seed=42)
+# The harness owner builds all derived models after applying the variant.
+```
+
+| Variant | Property on a fresh source load |
+| --- | --- |
+| `clean` | No changes and no queries. |
+| `nulls` | NULLs in 20% (rounded up) of each fact measure/discount and selected customer/supplier/part attributes; dimension keys remain present. |
+| `duplicates` | Copies 10% (rounded up) of each dimension and of facts. Fact copies keep identical business fields with new unique `lo_rowid` values above the previous maximum. |
+| `unmatched_keys` | 20% (rounded up) of facts per join receive a customer/supplier/part key or business date outside that dimension's range. Selections may overlap. |
+| `empty_partitions` | Removes all facts on 20% (rounded up) of observed business dates, leaving at least one business date; empties `supplier`. Load timestamps on surviving rows are unchanged. |
+| `skewed_keys` | Exactly ceil(90% of facts) share three existing customers evenly; the remainder use a fourth customer. |
+| `ties` | At least half the facts share an existing `lo_orderdate`/`lo_loaded_ts` pair, while retaining distinct `lo_rowid`. |
+
+Selection uses a stable MD5 ordering of the source key, seed, and selection purpose;
+it does not depend on insertion order or global random state. Identical fresh data,
+variant, and integer seed reproduce identical tables. Different seeds are tested
+against one another; finite tiny sources can still give coinciding selections.
+Non-clean variants require at least ten facts with unique non-NULL `lo_rowid`,
+nonempty dimensions with unique non-NULL keys, and the schema from `load_sources`.
+Skew also requires four customers; empty partitions require two business dates.
+Invalid shapes reject clearly. Apply one variant per fresh load; composition or
+reapplication is not supported. Mutations use one transaction and roll back on
+failure. Begin outside a caller transaction; DuckDB rejects nested transactions.
+
+For a future harness `--variant` option, include variant/seed in the base-cache key,
+apply it immediately after `load_sources` and before `pipeline.build_all`, and copy
+that same built base for both candidate and baseline. Do not apply it separately
+during scenario mutations. `harness.py` has no such option in this PR.
 Upstream layouts: `--layout {load_ts,order_date,unpartitioned}` changes how the fact source is partitioned
 (change column, a different business date, or none); see `upstream_layouts.py` and `results/upstream_layouts_sf0.05.md`.
