@@ -115,6 +115,9 @@ def apply_variant(con, name, seed):
                 _update(con, "lineorder", "lo_rowid", column, absent, sample, seed, column)
 
         elif name == "empty_partitions":
+            # COUNT(DISTINCT) excludes NULL, so n counts real business dates only and
+            # already matches the guard message and the README. For n >= 2,
+            # min(n - 1, ceil(n / 5)) >= 1, so at least one business date survives.
             n = con.execute("SELECT count(DISTINCT lo_orderdate) FROM lineorder").fetchone()[0]
             if n < 2:
                 raise ValueError("empty_partitions requires >=2 non-NULL business dates")

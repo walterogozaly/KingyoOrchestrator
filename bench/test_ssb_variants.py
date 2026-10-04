@@ -137,6 +137,26 @@ def test_empty_partitions_remove_entire_days_and_empty_a_dimension(con):
     assert scalar(con, "SELECT count(*) FROM supplier") == 0
 
 
+def test_empty_partitions_rejects_one_business_date_beside_nulls(con):
+    """One real business date beside NULLs must reject, never empty that one date.
+
+    Pins the documented guard. No WHERE clause is needed on the count: COUNT(DISTINCT)
+    excludes NULL per the SQL standard, so n is 1 here and the guard rejects.
+    """
+    con.execute(
+        "UPDATE lineorder SET lo_orderdate = CASE WHEN lo_rowid IN "
+        "(SELECT lo_rowid FROM lineorder ORDER BY lo_rowid LIMIT 50) "
+        "THEN DATE '1998-12-01' ELSE NULL END"
+    )
+    # NULLs are not business dates, so the source has a single one.
+    assert scalar(con, "SELECT count(DISTINCT lo_orderdate) FROM lineorder") == 1
+    before = snapshot(con)
+    with pytest.raises(ValueError, match=">=2 non-NULL"):
+        apply_variant(con, "empty_partitions", 42)
+    assert snapshot(con) == before
+    assert scalar(con, "SELECT count(*) FROM lineorder WHERE lo_orderdate IS NOT NULL") == 50
+
+
 def test_skew_places_ninety_percent_on_three_existing_customers(con):
     apply_variant(con, "skewed_keys", 42)
     counts = con.execute(
