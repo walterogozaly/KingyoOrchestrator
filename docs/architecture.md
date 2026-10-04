@@ -3,8 +3,9 @@
 Kingyo is intended to observe source changes, decide which downstream work may
 be affected, and eventually coordinate approved work. The current implementation
 validates local settings, offers an offline metadata contract with a fake reader,
-persists local snapshots, and provides offline partition resolution and string-only
-discovery SQL rendering. The remaining architecture below is a proposed direction.
+persists local snapshots, provides offline partition resolution and string-only
+discovery SQL rendering, and parses immutable dependency graphs from supported
+compiled Dataform JSON. The remaining architecture below is a proposed direction.
 
 ## Boundaries
 
@@ -14,6 +15,7 @@ discovery SQL rendering. The remaining architecture below is a proposed directio
 | Metadata contract | Immutable observations and read-only reader protocol | Existing `metadata/`; see [interface](metadata.md) |
 | Core | Change comparison and offline day-partition resolution; future dependency traversal | Existing `core/changes.py` and `core/partitions.py`; see [partition resolution](partition-resolution.md) |
 | Adapters | Provider-specific SQL rendering; future authorized integrations | Existing `adapters/bigquery_discovery.py` renders strings only |
+| Graph | Immutable actions, dependency traversal, and compiled-input diagnostics | Existing `graph/`; see [compiled graph](compiled-graph.md) |
 | State | Previous observations, checkpoints, run outcomes | Existing JSON `state.SnapshotStore`; see [format and limits](state.md) |
 
 Core decisions should consume ordinary data structures rather than cloud SDK

@@ -1,0 +1,73 @@
+{
+  "tables": [
+    {
+      "target": {
+        "database": "project_x",
+        "schema": "dataset_a",
+        "name": "table_clean"
+      },
+      "type": "table",
+      "dependencyTargets": [
+        {
+          "database": "project_x",
+          "schema": "dataset_a",
+          "name": "table_orders"
+        }
+      ],
+      "query": "SELECT 1 AS order_id"
+    },
+    {
+      "target": {
+        "database": "project_x",
+        "schema": "dataset_a",
+        "name": "view_a"
+      },
+      "type": "view",
+      "dependencyTargets": [
+        {
+          "database": "project_x",
+          "schema": "dataset_a",
+          "name": "table_clean"
+        }
+      ]
+    },
+    {
+      "target": {
+        "database": "project_x",
+        "schema": "dataset_a",
+        "name": "view_b"
+      },
+      "type": "view",
+      "dependencyTargets": [
+        {
+          "database": "project_x",
+          "schema": "dataset_a",
+          "name": "table_clean"
+        }
+      ]
+    },
+    {
+      "target": {
+        "database": "project_x",
+        "schema": "dataset_a",
+        "name": "table_summary"
+      },
+      "type": "incremental",
+      "dependencyTargets": [
+        {
+          "database": "project_x",
+          "schema": "dataset_a",
+          "name": "view_b"
+        },
+        {
+          "database": "project_x",
+          "schema": "dataset_a",
+          "name": "view_a"
+        }
+      ]
+    }
+  ],
+  "graphErrors": {
+    "compilationErrors": []
+  }
+}
