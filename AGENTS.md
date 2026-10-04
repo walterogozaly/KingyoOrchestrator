@@ -15,3 +15,17 @@
 - Run `python -m ruff check .`, `python -m ruff format --check .`, and the relevant
   `python -m pytest` tests after code changes. Check packaging when it changes.
 - Update README and architecture notes when behavior or setup instructions change.
+
+## Pull request reviews and merges
+
+- Claude is responsible for merging reviewed PRs unless the user assigns the merge
+  to another agent.
+- Agents may share the repository owner's GitHub account. When reviewer and author
+  have the same GitHub login, submit a `COMMENT` review instead of `APPROVE`.
+  GitHub forbids self-approval; do not retry it or ask for another identity solely
+  to obtain a formal approval.
+- A recorded review comment is sufficient for this workflow. After actionable
+  findings are resolved, required CI checks pass, and GitHub reports the PR as
+  mergeable, Claude may merge it without another person's approval. A missing
+  formal approval alone is not a blocker when GitHub does not require one.
+- Follow any explicit user hold or enforced repository rule that requires approval.
