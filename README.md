@@ -10,6 +10,8 @@ snapshot persistence and comparison, compiled Dataform graph ingestion, tests,
 and CI.
 Cloud integrations, polling, dependency graph planning, and execution are future work.
 All current commands run locally without credentials or cloud calls.
+The standalone [offline impact planner](docs/planning.md) proposes affected actions
+in deterministic build order from a caller-supplied dependency graph.
 The [small-dimension fingerprint API](docs/dimension-fingerprints.md) renders
 content-check SQL and compares caller-supplied results to suppress audit-only signals.
 
