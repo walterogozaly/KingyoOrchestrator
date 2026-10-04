@@ -103,3 +103,6 @@ Tests are in `bench/test_compare.py`, offline, synthetic rows only.
 
 Not wired into the harness yet: `harness.compare` is unchanged and a follow-up PR from the harness owner
 swaps it for `compare_dag`.
+
+Upstream layouts: `--layout {load_ts,order_date,unpartitioned}` changes how the fact source is partitioned
+(change column, a different business date, or none); see `upstream_layouts.py` and `results/upstream_layouts_sf0.05.md`.

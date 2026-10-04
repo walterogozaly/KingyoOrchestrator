@@ -15,7 +15,7 @@ impacts from a minimal graph protocol. The remaining architecture below is a pro
 | CLI/configuration | Explicit settings and local entry points | Existing `cli.py` and `config.py` |
 | Metadata contract | Immutable observations and read-only reader protocol | Existing `metadata/`; see [interface](metadata.md) |
 | Core | Change comparison and offline day-partition resolution; future dependency traversal | Existing `core/changes.py` and `core/partitions.py`; see [partition resolution](partition-resolution.md) |
-| Adapters | Provider-specific SQL rendering; future authorized integrations | Existing `adapters/bigquery_discovery.py` renders strings only |
+| Adapters | Provider-specific SQL rendering; future authorized integrations | Existing `adapters/bigquery_discovery.py` and `bigquery_partition_filter.py` render strings only |
 | Graph | Immutable actions, dependency traversal, and compiled-input diagnostics | Existing `graph/`; see [compiled graph](compiled-graph.md) |
 | Planning | Downstream impact, build order, and dependency-path reasons | Existing pure `planning.plan`; see [contract and policy](planning.md) |
 | State | Previous observations, checkpoints, run outcomes | Existing JSON `state.SnapshotStore`; see [format and limits](state.md) |

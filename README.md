@@ -45,7 +45,8 @@ docs/                    Architecture and initial work sequence
 ```
 
 `core/` contains pure change comparison and offline partition decisions;
-`adapters/` renders discovery SQL as strings, and `state/` persists local checkpoints.
+`adapters/` renders discovery SQL and literal DATE/TIMESTAMP partition filters as
+strings, and `state/` persists local checkpoints.
 Offline partition configs require `partition_time_zone="UTC"`; other declared
 day boundaries are rejected. Callers establish the physical table's UTC boundary.
 See [architecture](docs/architecture.md), the [metadata interface](docs/metadata.md),
