@@ -17,6 +17,7 @@ compiled Dataform JSON. The remaining architecture below is a proposed direction
 | Adapters | Provider-specific SQL rendering; future authorized integrations | Existing `adapters/bigquery_discovery.py` renders strings only |
 | Graph | Immutable actions, dependency traversal, and compiled-input diagnostics | Existing `graph/`; see [compiled graph](compiled-graph.md) |
 | State | Previous observations, checkpoints, run outcomes | Existing JSON `state.SnapshotStore`; see [format and limits](state.md) |
+| Lineage | Which source columns a consumer reads, and the conservative fallback | Existing `lineage/`; see [column relevance](column-relevance.md) |
 
 Core decisions should consume ordinary data structures rather than cloud SDK
 objects. Keep network calls at adapter boundaries so tests can use synthetic data.
@@ -27,6 +28,12 @@ Neither component is wired into the CLI or a polling loop yet.
 The separate `fingerprints/` package owns small-dimension decisions and audit
 candidate policy; `adapters/bigquery_fingerprints.py` only renders SQL strings.
 See [fingerprint limits and size gate](dimension-fingerprints.md).
+The `lineage/` package answers a narrower question than the planner: for a changed table
+and a set of changed columns, is each direct child relevant or a no-op? It parses plain
+BigQuery SQL through sqlglot behind the optional `lineage` extra, and returns the
+conservative fallback (every column used) whenever usage cannot be resolved. Only the
+`ColumnUsageSource` protocol crosses the boundary, so KumoSQL lineage can replace it.
+See [per-consumer column relevance](column-relevance.md).
 
 ## Proposed observation flow
 

@@ -47,6 +47,7 @@ docs/                    Architecture and initial work sequence
 See [architecture](docs/architecture.md), the [metadata interface](docs/metadata.md),
 the [partition resolver and cost limits](docs/partition-resolution.md),
 the [snapshot state format](docs/state.md), the [compiled graph interface](docs/compiled-graph.md),
+the [per-consumer column relevance](docs/column-relevance.md),
 and the [initial roadmap](docs/roadmap.md).
 
 ## Incremental prototype
@@ -57,6 +58,14 @@ relevance, or full refresh), and runs the unchanged SQL incrementally against a 
 scheduled wake-up. It makes no cloud calls. The supported SQL style is in
 [docs/incremental-supported-sql.md](docs/incremental-supported-sql.md). Install with
 `pip install -e ".[incremental]"` and try `python -m kingyo_orchestrator.incremental.demo`.
+
+## Column relevance
+
+`src/kingyo_orchestrator/lineage/` answers one question per changed table: does each downstream child
+actually read any column that changed, or is the change a no-op for it? Results are keyed by child and
+always carry a reason. When usage cannot be resolved, every column counts as used. Parsing plain BigQuery
+SQL needs the optional `lineage` extra; the planner itself takes any `ColumnUsageSource`, so KumoSQL
+lineage can replace it. See [per-consumer column relevance](docs/column-relevance.md).
 
 ## Benchmarks
 

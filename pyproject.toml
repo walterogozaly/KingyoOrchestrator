@@ -12,7 +12,8 @@ dependencies = []
 
 [project.optional-dependencies]
 incremental = ["duckdb>=1.1,<2", "sqlglot>=30.21,<31"]
-bench = ["duckdb>=1.1,<2", "sqlglot>=30.21,<31", "benchbox==0.4.1"]
+lineage = ["sqlglot>=30.21,<31"]
+bench = ["duckdb>=1.1,<2", "benchbox==0.4.1"]
 dev = ["build>=1.2,<2", "pytest>=8,<10", "ruff>=0.15,<0.16"]
 
 [project.scripts]
