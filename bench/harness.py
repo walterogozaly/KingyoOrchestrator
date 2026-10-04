@@ -29,6 +29,7 @@ sys.path.insert(0, str(HERE))
 import pipeline  # noqa: E402
 from candidates import CANDIDATES  # noqa: E402
 from scenarios import SCENARIOS  # noqa: E402
+from upstream_layouts import LAYOUTS, make_layout_repo, remap_signals  # noqa: E402
 
 BQ_METRICS = (
     "total_bytes_processed",
@@ -147,6 +148,7 @@ def run_trial(
     order_seed: int,
     repeats: int = 1,
     candidate: str = "full-rebuild",
+    layout: str = "load_ts",
 ):
     models = pipeline.load_repo(repo)
     cand = CANDIDATES[candidate]()
@@ -164,6 +166,7 @@ def run_trial(
         sigs = scenario.mutate(
             raw, random.Random(seed)
         )  # identical mutation on both sides (same seed)
+        sigs = remap_signals(raw, sigs, layout)
         m = Meter(raw, profile)
         t = time.perf_counter()
         if side == "baseline":
@@ -252,14 +255,18 @@ def main(argv=None):
     ap.add_argument("--scenarios", nargs="*")
     ap.add_argument("--candidate", default="full-rebuild", choices=list(CANDIDATES))
     ap.add_argument("--repo", default=str(HERE / "ssb_repo"))
+    ap.add_argument(
+        "--layout", default="load_ts", choices=LAYOUTS, help="how the fact source is partitioned"
+    )
     ap.add_argument("--cache", default=str(Path(tempfile.gettempdir()) / "kingyo_bench_cache"))
     ap.add_argument("--out", default=str(HERE / "results" / "latest"))
     a = ap.parse_args(argv)
     cache = Path(a.cache)
     cache.mkdir(parents=True, exist_ok=True)
-    base = cache / f"base_sf{a.sf}.duckdb"
+    repo = make_layout_repo(Path(a.repo), cache / f"repo_{a.layout}", a.layout)
+    base = cache / f"base_sf{a.sf}_{a.layout}.duckdb"
     if not base.exists():
-        build_base(base, Path(a.repo), cache / f"ssb_sf{a.sf}", a.sf)
+        build_base(base, repo, cache / f"ssb_sf{a.sf}", a.sf)
     names = a.scenarios or list(SCENARIOS)
     trials = []
     with tempfile.TemporaryDirectory() as wd:
@@ -267,13 +274,14 @@ def main(argv=None):
             for seed in range(a.seeds):
                 t = run_trial(
                     base,
-                    Path(a.repo),
+                    repo,
                     SCENARIOS[n],
                     seed,
                     Path(wd),
                     order_seed=seed,
                     repeats=a.repeats,
                     candidate=a.candidate,
+                    layout=a.layout,
                 )
                 trials.append(t)
                 print(
