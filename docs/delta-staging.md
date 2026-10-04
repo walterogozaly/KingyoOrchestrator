@@ -64,8 +64,15 @@ FROM `project_x.dataset_a.table_orders`
 WHERE `partition_date` IN (DATE '2026-01-01')
 ```
 
-The caller can also supply a predicate from the partition filter renderer. This
-renderer composes with that work through text and does not depend on its implementation.
+The caller can also supply any predicate text as the `predicate` argument. This is
+plain SQL text that `render_delta_select` preserves verbatim; there is no shared
+filter renderer in the repository yet. The `partition_filter` argument of
+`render_fingerprint_sql` and `render_key_hashes_sql` in
+`adapters/bigquery_fingerprints.py` is a separately validated string, not a
+renderer: it accepts only a simple column IN-list of literal `DATE` values and
+requires that column to be a key or content column of that config. A filter
+valid for a fingerprint config is therefore not automatically valid for a delta
+caller, and callers must supply and check their own predicate.
 
 ## Bytes and future verification
 

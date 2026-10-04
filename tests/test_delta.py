@@ -31,13 +31,15 @@ def test_fifty_column_table_projects_exactly_six_columns_and_stays_offline(monke
     monkeypatch.setattr(socket, "socket", deny_network)
     columns = ("order_id", "partition_date", *(f"col_{i:02d}" for i in range(48)))
     changed = ("col_12", "col_02", "col_09", "col_05")
-    sql = render_delta_select(config(declared_columns=columns, changed_columns=changed))
+    values = config(declared_columns=columns, changed_columns=changed)
+    sql = render_delta_select(values)
     projected = select_list(sql)
     assert len(columns) == 50
     assert projected == ("order_id", "partition_date", "col_02", "col_05", "col_09", "col_12")
     assert len(projected) == 6
     assert "*" not in sql
-    assert all(name not in projected for name in set(columns) - set(projected))
+    assert set(projected) == set(values.key_columns) | {values.partition_column} | set(changed)
+    assert len(set(projected)) == len(projected)
 
 
 def test_generated_select_has_exact_quoted_projection_and_table():
