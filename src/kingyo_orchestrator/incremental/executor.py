@@ -244,6 +244,12 @@ class Orchestrator:
                         f"{parent}->{name}: changed columns {sorted(cols)} do not reach {name} -> nothing to do"
                     )
                     continue
+            forced = (name, parent) in self.__dict__.get("_force_all", set())
+            if forced and s.kind in ("keyed", "outer_join"):
+                self.__dict__["_force_all"].discard((name, parent))
+                self._mark(name, ALL, since, ccols)
+                rep.log(f"{parent}->{name}: too many changed keys -> {name} ALL dirty")
+                continue
             if not pre_image and s.kind in ("keyed", "data_dependent", "outer_join"):
                 self._mark(name, ALL, since, ccols)
                 rep.log(
@@ -321,6 +327,10 @@ class Orchestrator:
                 ojs.setdefault(par, []).append(v)
         plain = {d: v for d, v in dirty.items() if not d.startswith(("@key|", "@oj|"))}
         full = ALL in dirty or not pe
+        self.__dict__["_nk_memo"] = {}
+        self.__dict__["_force_all"] = {
+            k for k in self.__dict__.get("_force_all", set()) if k[1] != name
+        }
         total = self._n_partitions(name)
         big = (
             self.con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
@@ -368,7 +378,10 @@ class Orchestrator:
                     where = f"WHERE {part_pred(pe, vals)}"
                     hashed_p = policy.cutoff_on_partial or not big
                     before = self._hashes(name, pe, where) if hashed_p else {v: 0 for v in vals}
-                    caps = self._capture(name, where)
+                    # with content cutoff on, children only see partitions whose content changed, so a
+                    # key count over every rewritten partition would over-trigger: decide up front only
+                    # when every rewritten partition is propagated anyway
+                    caps = self._capture(name, where, None if hashed_p else policy, rep)
                     self.con.execute(f"DELETE FROM {name} {where}")
                     self.con.execute(f"INSERT INTO {name} SELECT * FROM ({sql}) t {where}")
                     self._finish_capture(caps)
@@ -411,7 +424,7 @@ class Orchestrator:
             self.con.execute("ROLLBACK")
             raise
 
-    def _capture(self, name, where):
+    def _capture(self, name, where, policy=None, rep=None):
         """Snapshot, BEFORE `name` is rewritten in `where`, what its key-based children will need to know
         about rows that leave (keys, or child-partition values). Call `_finish_capture` right after the
         rewrite: only values that are no longer present afterwards are persisted (rows that stay are found
@@ -429,10 +442,44 @@ class Orchestrator:
                 what = {"keyed": s.key_col, "outer_join": s.plan and s.plan.b_cols[0]}.get(
                     s.kind
                 ) or (s.parent_expr.sql() if s.parent_expr is not None else None)
+                if (
+                    policy is not None
+                    and s.kind in ("keyed", "outer_join")
+                    and self._too_many_keys(c, what, name, where, policy, rep)
+                ):
+                    continue  # the child will be rebuilt in full: no pre-image needed
                 sel = f"SELECT DISTINCT '{c}', '{name}', CAST({pe} AS VARCHAR), CAST({what} AS VARCHAR) FROM {name} {where}"
                 self.con.execute(f"INSERT INTO _kingyo_cap {sel}")
                 caps.append((c, sel))
         return caps
+
+    def _too_many_keys(self, child, key, name, where, policy, rep):
+        """Decide up front whether a key-based child would end up rebuilt in full anyway (changed keys
+        > full_refresh_ratio of its rows). Scattered updates mark many parent partitions whose keys cover
+        most of the child; capturing and counting those keys first costs more than the rebuild saves."""
+        if not self.con.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name=?", [child]
+        ).fetchone()[0]:
+            return False
+        rows = self.con.execute(f"SELECT count(*) FROM {child}").fetchone()[0]
+        if rows < policy.min_rows_for_cost_rules:
+            return False
+        memo = self.__dict__.setdefault(
+            "_nk_memo", {}
+        )  # siblings keyed on the same column share one scan
+        if (name, key, where) not in memo:
+            q = f"SELECT count(DISTINCT {key}) FROM {name} {where}"
+            memo[(name, key, where)] = self.con.execute(q).fetchone()[0]
+        nk = memo[(name, key, where)]
+        if nk <= policy.full_refresh_ratio * rows:
+            return False
+        self.__dict__.setdefault("_force_all", set()).add((child, name))
+        if rep is not None:
+            rep.log(
+                f"{name}->{child}: {nk:,} keys in the changed partitions vs {child} {rows:,} rows "
+                f"> {policy.full_refresh_ratio:.0%} -> {child} will be rebuilt in full; skipping key capture"
+            )
+        return True
 
     def _finish_capture(self, caps):
         for c, sel in caps:
