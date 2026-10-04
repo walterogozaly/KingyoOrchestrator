@@ -14,6 +14,8 @@ The standalone [offline impact planner](docs/planning.md) proposes affected acti
 in deterministic build order from a caller-supplied dependency graph.
 The [small-dimension fingerprint API](docs/dimension-fingerprints.md) renders
 content-check SQL and compares caller-supplied results to suppress audit-only signals.
+The [delta SELECT renderer](docs/delta-staging.md) projects keys, partition, and
+changed columns as SQL text without running a query or creating a staging table.
 
 ## Start working
 
