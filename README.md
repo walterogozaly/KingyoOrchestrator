@@ -46,7 +46,7 @@ docs/                    Architecture and initial work sequence
 `adapters/` renders discovery SQL as strings, and `state/` persists local checkpoints.
 See [architecture](docs/architecture.md), the [metadata interface](docs/metadata.md),
 the [partition resolver and cost limits](docs/partition-resolution.md),
-the [snapshot state format](docs/state.md), the [compiled graph interface](docs/compiled-graph.md),
+the [snapshot state format](docs/state.md), the [column relevance rules](docs/column-relevance.md), the [compiled graph interface](docs/compiled-graph.md),
 and the [initial roadmap](docs/roadmap.md).
 
 ## Incremental prototype
@@ -57,6 +57,18 @@ relevance, or full refresh), and runs the unchanged SQL incrementally against a 
 scheduled wake-up. It makes no cloud calls. The supported SQL style is in
 [docs/incremental-supported-sql.md](docs/incremental-supported-sql.md). Install with
 `pip install -e ".[incremental]"` and try `python -m kingyo_orchestrator.incremental.demo`.
+
+## Column relevance
+
+`core/column_usage.py` answers, per downstream consumer, whether a changed column is read at all, so an
+audit-only change can be a no-op for one action and required for another. Column usage analysis for plain
+BigQuery SQL is behind an optional extra:
+
+```console
+pip install -e ".[lineage]"
+```
+
+See [column relevance and its conservative fallback](docs/column-relevance.md).
 
 ## Benchmarks
 
