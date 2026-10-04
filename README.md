@@ -4,7 +4,8 @@ A Python workspace for building an observe-first orchestrator around BigQuery,
 Dataform, and KumoSQL. Python is the initial implementation choice because the
 adjacent tooling and metadata clients already use it.
 
-The starter includes packaging, a local configuration validator, tests, and CI.
+The starter includes packaging, a local configuration validator, an offline
+metadata interface with a fake reader, tests, and CI.
 Cloud integrations, polling, dependency planning, and execution are future work.
 All current commands run locally without credentials or cloud calls.
 
@@ -31,7 +32,7 @@ and `cp` in place of `Copy-Item`.
 
 ```text
 src/kingyo_orchestrator/  Python package, CLI, and configuration
-tests/                   Offline configuration and CLI checks
+tests/                   Offline configuration, CLI, and metadata checks
 config/                  Public example settings; local settings are ignored
 docs/                    Architecture and initial work sequence
 .github/workflows/       Lint, tests, and package build checks
@@ -39,7 +40,8 @@ docs/                    Architecture and initial work sequence
 
 As implementation grows, add `core/` for orchestration decisions, `adapters/`
 for external services, and `state/` for checkpoint persistence inside the package.
-See [architecture](docs/architecture.md) and the [initial roadmap](docs/roadmap.md).
+See [architecture](docs/architecture.md), the [metadata interface](docs/metadata.md),
+and the [initial roadmap](docs/roadmap.md).
 
 ## Verify changes
 

@@ -2,13 +2,15 @@
 
 Kingyo is intended to observe source changes, decide which downstream work may
 be affected, and eventually coordinate approved work. The current implementation
-only validates local settings. The architecture below is a proposed direction.
+validates local settings and offers an offline metadata contract with a fake
+reader. The remaining architecture below is a proposed direction.
 
 ## Boundaries
 
 | Area | Responsibility | First likely implementation |
 | --- | --- | --- |
 | CLI/configuration | Explicit settings and local entry points | Existing `cli.py` and `config.py` |
+| Metadata contract | Immutable observations and read-only reader protocol | Existing `metadata/`; see [interface](metadata.md) |
 | Core | Change comparison, dependency traversal, proposed work | Pure functions under `core/` |
 | Adapters | BigQuery metadata, Dataform compiled graphs, KumoSQL integration | Provider-specific modules under `adapters/` |
 | State | Previous observations, checkpoints, run outcomes | A local store under `state/`, data in ignored `var/` |
