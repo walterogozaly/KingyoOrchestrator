@@ -3,7 +3,8 @@
 Kingyo is intended to observe source changes, decide which downstream work may
 be affected, and eventually coordinate approved work. The current implementation
 validates local settings and offers an offline metadata contract with a fake
-reader, plus offline partition resolution and string-only discovery SQL rendering.
+reader, offline partition resolution, string-only discovery SQL rendering, and
+immutable dependency graphs parsed from supported compiled Dataform JSON.
 The remaining architecture below is a proposed direction.
 
 ## Boundaries
@@ -14,6 +15,7 @@ The remaining architecture below is a proposed direction.
 | Metadata contract | Immutable observations and read-only reader protocol | Existing `metadata/`; see [interface](metadata.md) |
 | Core | Offline day-partition resolution; future comparison and dependency traversal | Existing `core/partitions.py`; see [partition resolution](partition-resolution.md) |
 | Adapters | Provider-specific SQL rendering; future authorized integrations | Existing `adapters/bigquery_discovery.py` renders strings only |
+| Graph | Immutable actions, dependency traversal, and compiled-input diagnostics | Existing `graph/`; see [compiled graph](compiled-graph.md) |
 | State | Previous observations, checkpoints, run outcomes | A local store under `state/`, data in ignored `var/` |
 
 Core decisions should consume ordinary data structures rather than cloud SDK
