@@ -94,7 +94,7 @@ def late_update(con, rng, frac=0.001, recent_days=None):
     con.execute(
         f"UPDATE lineorder SET lo_revenue = lo_revenue + 1000, lo_loaded_ts = TIMESTAMP '{day} 06:00:00' WHERE lo_rowid IN ({lst})"
     )
-    return [("lineorder", [str(day)])]
+    return [("lineorder", [str(day)], ["lo_revenue", "lo_loaded_ts"])]
 
 
 def dim_change(con, rng, k=5):
@@ -105,12 +105,12 @@ def dim_change(con, rng, k=5):
     con.execute(
         f"UPDATE customer SET c_region = 'ASIA', c_nation = 'CHINA', c_city = 'CHINA0' WHERE c_custkey IN ({','.join(map(str, pick))})"
     )
-    return [("customer", ALL)]
+    return [("customer", ALL, ["c_region", "c_nation", "c_city"])]
 
 
 def source_column_added(con, rng):
     con.execute("ALTER TABLE lineorder ADD COLUMN lo_note VARCHAR")
-    return [("lineorder", ALL)]
+    return [("lineorder", ALL, ["lo_note"])]
 
 
 def edge_mix(con, rng):
