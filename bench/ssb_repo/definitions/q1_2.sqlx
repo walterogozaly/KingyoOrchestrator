@@ -1,0 +1,6 @@
+config { type: "table", bigquery: { partitionBy: "d_year" } }
+
+select d_year, sum(lo_extendedprice * lo_discount) as measure
+from ${ref("fact_sales")}
+where d_yearmonthnum = 199401 and lo_discount between 4 and 6 and lo_quantity between 26 and 35
+group by d_year

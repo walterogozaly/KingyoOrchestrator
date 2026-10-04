@@ -45,6 +45,11 @@ See [architecture](docs/architecture.md), the [metadata interface](docs/metadata
 the [partition resolver and cost limits](docs/partition-resolution.md), the
 [snapshot state format](docs/state.md), and the [initial roadmap](docs/roadmap.md).
 
+## Benchmarks
+
+`bench/` holds an offline benchmark harness (SSB-derived Dataform pipeline on DuckDB, paired baseline/candidate
+runs, correctness before speed). See `bench/README.md`; install with `pip install -e ".[bench]"`.
+
 ## Verify changes
 
 ```powershell

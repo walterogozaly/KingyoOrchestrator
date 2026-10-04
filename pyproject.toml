@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+bench = ["duckdb>=1.1,<2", "benchbox==0.4.1"]
 dev = ["build>=1.2,<2", "pytest>=8,<10", "ruff>=0.15,<0.16"]
 
 [project.scripts]
@@ -29,3 +30,8 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# benchmark scenarios and the SSB repo generator embed long SQL strings
+"bench/*" = ["E501"]
+"tests/test_bench.py" = ["E501"]

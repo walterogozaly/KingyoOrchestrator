@@ -1,0 +1,6 @@
+config { type: "table", bigquery: { partitionBy: "DATE(lo_loaded_ts)" } }
+
+select lo_rowid, lo_custkey, lo_partkey, lo_suppkey, lo_orderdate as order_date, lo_loaded_ts,
+       lo_quantity, lo_extendedprice, lo_discount, lo_revenue, lo_supplycost
+from ${ref("lineorder")}
+where lo_quantity > 0

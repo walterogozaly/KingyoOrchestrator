@@ -1,0 +1,6 @@
+config { type: "table", bigquery: { partitionBy: "d_year" } }
+
+select d_year, s_city, p_brand1, sum(lo_revenue - lo_supplycost) as measure
+from ${ref("fact_sales")}
+where c_region = 'AMERICA' and s_nation = 'UNITED STATES' and d_year in (1997, 1998) and p_category = 'MFGR#14'
+group by d_year, s_city, p_brand1
