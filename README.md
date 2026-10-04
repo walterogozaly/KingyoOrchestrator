@@ -9,6 +9,8 @@ metadata interface with a fake reader, offline day-partition resolution, local
 snapshot persistence and comparison, tests, and CI.
 Cloud integrations, polling, dependency graph planning, and execution are future work.
 All current commands run locally without credentials or cloud calls.
+The [small-dimension fingerprint API](docs/dimension-fingerprints.md) renders
+content-check SQL and compares caller-supplied results to suppress audit-only signals.
 
 ## Start working
 
