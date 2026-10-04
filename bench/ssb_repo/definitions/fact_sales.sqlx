@@ -1,0 +1,11 @@
+config { type: "table", bigquery: { partitionBy: "order_date" } }
+
+select l.lo_rowid, l.order_date, l.lo_loaded_ts, d.d_year, d.d_yearmonthnum, d.d_yearmonth, d.d_weeknuminyear,
+       c.c_nation, c.c_region, c.c_city, s.s_nation, s.s_region, s.s_city,
+       p.p_mfgr, p.p_category, p.p_brand1,
+       l.lo_quantity, l.lo_extendedprice, l.lo_discount, l.lo_revenue, l.lo_supplycost
+from ${ref("stg_lineorder")} l
+join ${ref("customer")} c on l.lo_custkey = c.c_custkey
+join ${ref("supplier")} s on l.lo_suppkey = s.s_suppkey
+join ${ref("part")} p on l.lo_partkey = p.p_partkey
+join ${ref("dates")} d on l.order_date = d.d_date

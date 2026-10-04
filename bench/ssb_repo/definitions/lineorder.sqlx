@@ -1,0 +1,1 @@
+config { type: "declaration", name: "lineorder", uniqueKey: "lo_rowid", bigquery: { partitionBy: "DATE(lo_loaded_ts)" } }

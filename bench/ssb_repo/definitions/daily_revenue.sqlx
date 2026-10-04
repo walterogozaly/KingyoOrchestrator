@@ -1,0 +1,5 @@
+config { type: "table", bigquery: { partitionBy: "order_date" } }
+
+select order_date, c_region, sum(lo_revenue) as revenue, count(*) as n_lines
+from ${ref("fact_sales")}
+group by order_date, c_region

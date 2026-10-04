@@ -1,0 +1,6 @@
+config { type: "table", bigquery: { partitionBy: "d_year" } }
+
+select d_year, p_brand1, sum(lo_revenue) as measure
+from ${ref("fact_sales")}
+where p_brand1 between 'MFGR#2221' and 'MFGR#2228' and s_region = 'ASIA'
+group by d_year, p_brand1
