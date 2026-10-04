@@ -42,3 +42,25 @@ single-writer observation API, not an execution or acknowledgement protocol.
 This audit does not test power loss, every filesystem, unbounded resource
 exhaustion, cloud metadata precision, or provider identifier normalization.
 CI exercises Python 3.11, 3.12, and 3.13; the Windows-only check needs Windows.
+
+## Partition resolution audit
+
+`test_partition_audit.py` records the offline audit of `core/partitions.py` and
+`adapters/bigquery_discovery.py` from issue #25. It changes no production
+behavior and runs Kingyo's own emitted discovery SQL against a synthetic DuckDB
+catalog.
+
+```console
+python -m pytest tests/audit/test_partition_audit.py -q
+python -m pytest tests/audit/test_partition_audit.py --runxfail -q
+```
+
+| Finding | Witness coverage |
+| --- | --- |
+| [#37](https://github.com/walterogozaly/KingyoOrchestrator/issues/37) | A table partitioned on a non-UTC day boundary (`DATE(col, 'America/New_York')`) resolves to UTC days, so the partition holding a changed row is skipped, on both the discovery path and the same-column short circuit. |
+| [#38](https://github.com/walterogozaly/KingyoOrchestrator/issues/38) | Reported as measurements rather than a test: a contiguous window is materialized one `date` per day (739,616 dates and 67 MiB for a first run with no stored watermark). A timing assertion would be flaky in CI, so no test was committed for it. |
+
+Two green controls keep the witnesses honest: one asserts the emitted SQL still
+executes, so a broken DuckDB adaptation cannot turn a witness into a passing
+`xfail`, and one asserts a UTC-partitioned table resolves the same change
+correctly.
