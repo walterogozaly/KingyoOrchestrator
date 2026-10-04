@@ -6,7 +6,9 @@ validates local settings, offers an offline metadata contract with a fake reader
 persists local snapshots, provides offline partition resolution and string-only
 discovery SQL rendering, and parses immutable dependency graphs from supported
 compiled Dataform JSON. The standalone `planning/` package proposes downstream
-impacts from a minimal graph protocol. The remaining architecture below is a proposed direction.
+impacts from a minimal graph protocol. Delta projection decisions live in
+`core/delta.py`, with string-only SELECT rendering in `adapters/bigquery_delta.py`;
+see [supported inputs](delta-staging.md). The remaining architecture below is a proposed direction.
 
 ## Boundaries
 
