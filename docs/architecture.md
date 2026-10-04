@@ -24,6 +24,9 @@ Choose dependencies when implementing an adapter; the bootstrap has none.
 The comparison function consumes plain snapshot dictionaries and does no I/O;
 the store only persists those values. Callers explicitly load and save each run.
 Neither component is wired into the CLI or a polling loop yet.
+The separate `fingerprints/` package owns small-dimension decisions and audit
+candidate policy; `adapters/bigquery_fingerprints.py` only renders SQL strings.
+See [fingerprint limits and size gate](dimension-fingerprints.md).
 
 ## Proposed observation flow
 
