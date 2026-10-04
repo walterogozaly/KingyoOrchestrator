@@ -1,0 +1,12 @@
+config { type: "table", bigquery: { partitionBy: "DATE(last_upd_ts)" } }
+
+with base as (
+  select * from ${ref("stg_orders")}
+),
+agg as (
+  select customer_id, max(last_upd_ts) as last_upd_ts, sum(amount) as amount, count(*) as n
+  from base
+  group by customer_id
+)
+select a.customer_id, a.last_upd_ts, a.amount, a.n
+from agg as a
