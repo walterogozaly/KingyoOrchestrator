@@ -45,3 +45,5 @@ select = ["E", "F", "I", "UP", "B"]
 # the incremental prototype embeds long SQL strings and log messages
 "src/kingyo_orchestrator/incremental/*" = ["E501"]
 "tests/incremental/*" = ["E501"]
+# audit witnesses embed one-line SQL per case, so each row stays readable
+"tests/audit/*" = ["E501"]
