@@ -1,0 +1,5 @@
+config { type: "table", bigquery: { partitionBy: "DATE(last_upd_ts)" } }
+
+select s.order_id, s.amount, s.last_upd_ts, c.segment
+from (select order_id, customer_id, amount, last_upd_ts from ${ref("orders")} where status != 'test') as s
+left join ${ref("customers")} as c on s.customer_id = c.customer_id

@@ -1,0 +1,5 @@
+config { type: "table", bigquery: { partitionBy: "day" } }
+
+select date(last_upd_ts) as day, sum(amount) as revenue, count(*) as n_orders
+from ${ref("stg_orders")}
+group by 1

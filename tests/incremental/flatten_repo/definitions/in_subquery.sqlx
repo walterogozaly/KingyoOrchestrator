@@ -1,0 +1,4 @@
+config { type: "table", bigquery: { partitionBy: "DATE(last_upd_ts)" } }
+
+select order_id, amount, last_upd_ts from ${ref("orders")}
+where amount > (select avg(amount) from ${ref("orders")})

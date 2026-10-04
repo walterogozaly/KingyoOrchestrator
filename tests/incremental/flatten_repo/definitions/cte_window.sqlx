@@ -1,0 +1,8 @@
+config { type: "table", bigquery: { partitionBy: "DATE(last_upd_ts)" } }
+
+with r as (
+  select order_id, amount, last_upd_ts,
+         row_number() over (partition by DATE(last_upd_ts) order by amount desc, order_id) as rn
+  from ${ref("orders")}
+)
+select order_id, amount, last_upd_ts from r where rn <= 2

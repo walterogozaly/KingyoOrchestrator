@@ -1,0 +1,4 @@
+config { type: "table", bigquery: { partitionBy: "DATE(last_upd_ts)" } }
+
+with a as (select customer_id, max(last_upd_ts) as last_upd_ts, sum(amount) as amount from ${ref("orders")} group by customer_id)
+select * from a

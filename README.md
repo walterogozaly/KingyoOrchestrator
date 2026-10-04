@@ -45,6 +45,15 @@ See [architecture](docs/architecture.md), the [metadata interface](docs/metadata
 the [partition resolver and cost limits](docs/partition-resolution.md), the
 [snapshot state format](docs/state.md), and the [initial roadmap](docs/roadmap.md).
 
+## Incremental prototype
+
+`src/kingyo_orchestrator/incremental/` is the offline incremental-orchestration prototype: it reads plain
+(non-incremental) SQLX, classifies each dependency edge (aligned partitions, keyed, outer-join, column-aware
+relevance, or full refresh), and runs the unchanged SQL incrementally against a **local DuckDB** database on each
+scheduled wake-up. It makes no cloud calls. The supported SQL style is in
+[docs/incremental-supported-sql.md](docs/incremental-supported-sql.md). Install with
+`pip install -e ".[incremental]"` and try `python -m kingyo_orchestrator.incremental.demo`.
+
 ## Benchmarks
 
 `bench/` holds an offline benchmark harness (SSB-derived Dataform pipeline on DuckDB, paired baseline/candidate
