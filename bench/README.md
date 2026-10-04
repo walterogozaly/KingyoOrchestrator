@@ -2,8 +2,10 @@
 
     pip install -e ".[bench]"          # duckdb + pinned benchbox (data generator)
     python bench/harness.py --sf 0.05 --seeds 5 --repeats 3 --out bench/results/run1
-    python bench/harness.py --candidate kingyo-prototype ...   # needs KINGYO_PROTOTYPE_PATH (prototype not in this repo yet)
+    python bench/harness.py --candidate kingyo-prototype          # the in-repo incremental prototype
+    python bench/harness.py --candidate kingyo-prototype-columns  # + changed-column hints (late updates, dimension change, added column)
     python -m pytest tests/test_bench.py -q   # offline, tiny hand-written data; skipped without duckdb
+    python -m pytest bench -q                  # correctness checker and report tests
 
 The default candidate `full-rebuild` is a control: it must reproduce the baseline exactly with ratios near 1.
 
@@ -67,3 +69,37 @@ compare equivalent scenario/seed populations for meaningful conclusions.
 The harness's existing inline summary remains unchanged; this command formats
 its saved JSON independently. Report tests are included in the normal pytest run
 and require no optional benchmark dependencies.
+
+## Correctness checker (`compare.py`)
+
+`compare_tables(con_a, con_b, table, *, ordered_by=None, float_tol=1e-9)` returns `[]` when the two sides
+are equal, otherwise human-readable problems with at most 5 sample differing rows. `compare_dag(con_a,
+con_b, tables, **kw)` does the same for several tables and returns one entry per table, empty when that
+table matches. `table` is one name looked up on both connections, or a `(name_a, name_b)` pair when both
+tables share one connection. Side a is the baseline and side b the candidate.
+
+```python
+from bench import compare
+
+problems = compare.compare_dag(ca, cb, ["q1_1", "daily_revenue"])
+problems = compare.compare_dag(ca, cb, {"daily_revenue": ["order_date"]})   # order matters
+```
+
+Rules: same column names and order, else a "columns differ" problem; multiset equality by default, so
+duplicate counts matter; NULL equals NULL, NaN equals NaN, floats equal within relative `float_tol`
+(pass `0` for exact); timestamps, dates and decimals compare exactly. With `ordered_by`, rows must match
+in that order and rows tied on it are compared as multisets, so an ordering tie is never a difference.
+
+Memory: when both tables share one connection and no tolerance is needed, one `EXCEPT ALL` query decides
+equality and no row reaches Python. Otherwise DuckDB sorts both sides and the checker streams them in
+chunks, merging one row per side at a time. Table names must be plain identifiers, and an unreadable
+table is reported as a problem rather than raised.
+
+Caveat: float tolerance is matched greedily in sorted order, so in a pathological non-transitive case it
+can report a difference where a perfect matching exists. That direction is the safe one: a false problem
+costs a re-run, a false equality would hide a wrong result.
+
+Tests are in `bench/test_compare.py`, offline, synthetic rows only.
+
+Not wired into the harness yet: `harness.compare` is unchanged and a follow-up PR from the harness owner
+swaps it for `compare_dag`.

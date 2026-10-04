@@ -5,7 +5,8 @@ be affected, and eventually coordinate approved work. The current implementation
 validates local settings, offers an offline metadata contract with a fake reader,
 persists local snapshots, provides offline partition resolution and string-only
 discovery SQL rendering, and parses immutable dependency graphs from supported
-compiled Dataform JSON. The remaining architecture below is a proposed direction.
+compiled Dataform JSON. The standalone `planning/` package proposes downstream
+impacts from a minimal graph protocol. The remaining architecture below is a proposed direction.
 
 ## Boundaries
 
@@ -16,11 +17,14 @@ compiled Dataform JSON. The remaining architecture below is a proposed direction
 | Core | Change comparison and offline day-partition resolution; future dependency traversal | Existing `core/changes.py` and `core/partitions.py`; see [partition resolution](partition-resolution.md) |
 | Adapters | Provider-specific SQL rendering; future authorized integrations | Existing `adapters/bigquery_discovery.py` renders strings only |
 | Graph | Immutable actions, dependency traversal, and compiled-input diagnostics | Existing `graph/`; see [compiled graph](compiled-graph.md) |
+| Planning | Downstream impact, build order, and dependency-path reasons | Existing pure `planning.plan`; see [contract and policy](planning.md) |
 | State | Previous observations, checkpoints, run outcomes | Existing JSON `state.SnapshotStore`; see [format and limits](state.md) |
 
 Core decisions should consume ordinary data structures rather than cloud SDK
 objects. Keep network calls at adapter boundaries so tests can use synthetic data.
 Choose dependencies when implementing an adapter; the bootstrap has none.
+Planning consumes a minimal string-id graph protocol; compiled graph ingestion
+can adapt to it without introducing provider or persistence dependencies.
 The comparison function consumes plain snapshot dictionaries and does no I/O;
 the store only persists those values. Callers explicitly load and save each run.
 Neither component is wired into the CLI or a polling loop yet.

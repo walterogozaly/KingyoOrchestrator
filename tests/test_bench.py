@@ -78,6 +78,24 @@ def test_full_rebuild_control_is_correct(base, name):
     assert t["status"] in ("faster", "same", "slower"), t
 
 
+@pytest.mark.parametrize("candidate", ["kingyo-prototype", "kingyo-prototype-columns"])
+@pytest.mark.parametrize("name", [n for n, s in harness.SCENARIOS.items() if not s.requires])
+def test_prototype_matches_full_rebuild(base, name, candidate):
+    """Correctness gate: the in-repo prototype must reproduce the baseline on every supported scenario."""
+    pytest.importorskip("sqlglot")
+    with tempfile.TemporaryDirectory() as wd:
+        t = harness.run_trial(
+            base,
+            harness.HERE / "ssb_repo",
+            harness.SCENARIOS[name],
+            0,
+            Path(wd),
+            0,
+            candidate=candidate,
+        )
+    assert t["status"] in ("faster", "same", "slower"), t
+
+
 def test_unsupported_scenario_is_reported_not_hidden(base):
     with tempfile.TemporaryDirectory() as wd:
         t = harness.run_trial(
