@@ -101,6 +101,20 @@ Empty windows always return empty selections and require no discovery.
 The renderer itself remains callable and always returns a SQL string; callers
 use `discovery_required` to skip unnecessary discovery.
 
+## Known limits found by audit #25
+
+Two defects are open against this module; both are tracked with witnesses in
+`tests/audit/test_partition_audit.py`.
+
+- The resolved days are **UTC** days and `PartitionConfig` cannot express the
+  table's partition day boundary. For a table partitioned by
+  `DATE(order_sold_ts, 'America/New_York')` (or any non-UTC zone) the selection
+  silently misses the partition that holds a changed row. Only `granularity` is
+  enforced; the UTC assumption is trusted, not checked. See #37.
+- A contiguous window is materialized one `date` per day before being collapsed
+  back into a single `DayRange`, so a wide window (a first run with no stored
+  watermark) costs seconds and hundreds of megabytes. See #38.
+
 ## Cost and caller responsibilities
 
 Discovery references only the change and partition columns. A qualifying constant

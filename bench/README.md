@@ -2,7 +2,8 @@
 
     pip install -e ".[bench]"          # duckdb + pinned benchbox (data generator)
     python bench/harness.py --sf 0.05 --seeds 5 --repeats 3 --out bench/results/run1
-    python bench/harness.py --candidate kingyo-prototype ...   # needs KINGYO_PROTOTYPE_PATH (prototype not in this repo yet)
+    python bench/harness.py --candidate kingyo-prototype          # the in-repo incremental prototype
+    python bench/harness.py --candidate kingyo-prototype-columns  # + changed-column hints (late updates, dimension change, added column)
     python -m pytest tests/test_bench.py -q   # offline, tiny hand-written data; skipped without duckdb
 
 The default candidate `full-rebuild` is a control: it must reproduce the baseline exactly with ratios near 1.
