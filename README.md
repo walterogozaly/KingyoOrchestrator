@@ -6,9 +6,12 @@ adjacent tooling and metadata clients already use it.
 
 The starter includes packaging, a local configuration validator, an offline
 metadata interface with a fake reader, offline day-partition resolution, local
-snapshot persistence and comparison, tests, and CI.
+snapshot persistence and comparison, compiled Dataform graph ingestion, tests,
+and CI.
 Cloud integrations, polling, dependency graph planning, and execution are future work.
 All current commands run locally without credentials or cloud calls.
+The [small-dimension fingerprint API](docs/dimension-fingerprints.md) renders
+content-check SQL and compares caller-supplied results to suppress audit-only signals.
 
 ## Start working
 
@@ -33,7 +36,7 @@ and `cp` in place of `Copy-Item`.
 
 ```text
 src/kingyo_orchestrator/  Python package, CLI, and configuration
-tests/                   Offline configuration, CLI, metadata, partition, and state checks
+tests/                   Offline configuration, CLI, metadata, partition, state, and graph checks
 config/                  Public example settings; local settings are ignored
 docs/                    Architecture and initial work sequence
 .github/workflows/       Lint, tests, and package build checks
@@ -42,13 +45,25 @@ docs/                    Architecture and initial work sequence
 `core/` contains pure change comparison and offline partition decisions;
 `adapters/` renders discovery SQL as strings, and `state/` persists local checkpoints.
 See [architecture](docs/architecture.md), the [metadata interface](docs/metadata.md),
-the [partition resolver and cost limits](docs/partition-resolution.md), the
-[snapshot state format](docs/state.md), and the [initial roadmap](docs/roadmap.md).
+the [partition resolver and cost limits](docs/partition-resolution.md),
+the [snapshot state format](docs/state.md), the [compiled graph interface](docs/compiled-graph.md),
+and the [initial roadmap](docs/roadmap.md).
+
+## Incremental prototype
+
+`src/kingyo_orchestrator/incremental/` is the offline incremental-orchestration prototype: it reads plain
+(non-incremental) SQLX, classifies each dependency edge (aligned partitions, keyed, outer-join, column-aware
+relevance, or full refresh), and runs the unchanged SQL incrementally against a **local DuckDB** database on each
+scheduled wake-up. It makes no cloud calls. The supported SQL style is in
+[docs/incremental-supported-sql.md](docs/incremental-supported-sql.md). Install with
+`pip install -e ".[incremental]"` and try `python -m kingyo_orchestrator.incremental.demo`.
 
 ## Benchmarks
 
 `bench/` holds an offline benchmark harness (SSB-derived Dataform pipeline on DuckDB, paired baseline/candidate
-runs, correctness before speed). See `bench/README.md`; install with `pip install -e ".[bench]"`.
+runs, correctness before speed). See [benchmark commands](bench/README.md); install with `pip install -e ".[bench]"`.
+The standard-library report command, `python -m bench.report results.json`, summarizes saved trials
+and can compare a previous run without opening databases or contacting cloud services.
 
 ## Verify changes
 

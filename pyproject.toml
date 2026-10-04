@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+incremental = ["duckdb>=1.1,<2", "sqlglot>=30.21,<31"]
 bench = ["duckdb>=1.1,<2", "benchbox==0.4.1"]
 dev = ["build>=1.2,<2", "pytest>=8,<10", "ruff>=0.15,<0.16"]
 
@@ -20,8 +21,11 @@ kingyo = "kingyo_orchestrator.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"kingyo_orchestrator.incremental" = ["sample_repo/definitions/*.sqlx"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "bench"]
 pythonpath = ["src"]
 
 [tool.ruff]
@@ -35,3 +39,6 @@ select = ["E", "F", "I", "UP", "B"]
 # benchmark scenarios and the SSB repo generator embed long SQL strings
 "bench/*" = ["E501"]
 "tests/test_bench.py" = ["E501"]
+# the incremental prototype embeds long SQL strings and log messages
+"src/kingyo_orchestrator/incremental/*" = ["E501"]
+"tests/incremental/*" = ["E501"]

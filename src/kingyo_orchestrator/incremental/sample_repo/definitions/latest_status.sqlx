@@ -1,0 +1,8 @@
+config { type: "table", bigquery: { partitionBy: "DATE(last_upd_ts)" } }
+
+select order_id, customer_id, amount, last_upd_ts
+from (
+  select s.*, row_number() over (partition by s.customer_id order by s.last_upd_ts desc, s.order_id desc) as rn
+  from ${ref("stg_orders")} as s
+)
+where rn = 1
