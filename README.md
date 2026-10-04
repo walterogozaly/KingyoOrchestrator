@@ -61,7 +61,9 @@ scheduled wake-up. It makes no cloud calls. The supported SQL style is in
 ## Benchmarks
 
 `bench/` holds an offline benchmark harness (SSB-derived Dataform pipeline on DuckDB, paired baseline/candidate
-runs, correctness before speed). See `bench/README.md`; install with `pip install -e ".[bench]"`.
+runs, correctness before speed). See [benchmark commands](bench/README.md); install with `pip install -e ".[bench]"`.
+The standard-library report command, `python -m bench.report results.json`, summarizes saved trials
+and can compare a previous run without opening databases or contacting cloud services.
 
 ## Verify changes
 
