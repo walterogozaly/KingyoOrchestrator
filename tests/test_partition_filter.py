@@ -25,6 +25,7 @@ DATE_CONFIG = PartitionConfig(
     "last_upd_ts",
     "partition_date",
     (ColumnSpec("last_upd_ts", "TIMESTAMP"), ColumnSpec("partition_date", "DATE")),
+    partition_time_zone="UTC",
 )
 TIMESTAMP_CONFIG = replace(
     DATE_CONFIG,

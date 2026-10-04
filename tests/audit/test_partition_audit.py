@@ -1,32 +1,11 @@
-"""Audit witnesses for the partition-resolution slice (issue #25).
+"""Offline regression witnesses for the partition-resolution audit (issues #25/#37).
 
-Every test here is an offline, synthetic witness: no cloud client, no network,
-no real identifiers. A witness that still fails is marked ``xfail`` with the
-audit issue that tracks the root cause, so the suite stays green while the
-defect stands and screams when it is fixed (strict xfail).
-
-W1 (audit issue #37, filed from #25): Kingyo resolves change windows to **UTC**
-days, but a BigQuery table can be partitioned by a day boundary in another
-timezone, for example ``DATE(order_sold_ts, 'America/New_York')``. The emitted
-discovery SQL hardcodes ``TIMESTAMP_TRUNC(<partition_column>, DAY, 'UTC')`` and
-``PartitionConfig`` has no field for the table's partition timezone, so a row
-that changed inside the window is mapped to a UTC day that is not the partition
-holding it. The partition that really changed is silently dropped.
-
-These witnesses run Kingyo's own SQL string in DuckDB. Three mechanical
-adaptations are needed and are the only differences from the emitted text:
-
-* DuckDB has no backtick quoting, so the witness strips backticks. The identifier
-  characters are untouched.
-* BigQuery spells the granularity as a bare keyword (``DAY``); DuckDB needs it
-  quoted, so the witness quotes it.
-* DuckDB has no ``TIMESTAMP_TRUNC``; the witness installs a macro that accepts
-  only ``DAY``/``'UTC'`` (the shape Kingyo emits) and maps it to
-  ``date_trunc('day', ...)``, which is the same UTC day truncation.
-
-``test_emitted_discovery_sql_is_executable`` guards the adaptation itself: if
-Kingyo's SQL stops running here, the xfail witnesses below would pass for the
-wrong reason and that guard fails instead.
+Non-UTC day boundaries are now refused by the required PartitionConfig declaration.
+The original synthetic rows retain the off-by-one-day precondition on both paths.
+UTC controls execute Kingyo's own discovery SQL in DuckDB, with only these
+mechanical adaptations: strip backticks, quote DAY, and install a TIMESTAMP_TRUNC
+macro accepting only DAY/UTC and mapping it to date_trunc('day', ...).
+No cloud client, credentials, or network are needed.
 """
 
 from __future__ import annotations
@@ -55,6 +34,7 @@ CONFIG = PartitionConfig(
     table="project_x.dataset_a.table_orders",
     change_column="last_upd_ts",
     partition_column="order_sold_ts",
+    partition_time_zone="UTC",
     columns=(ColumnSpec("last_upd_ts", "TIMESTAMP"), ColumnSpec("order_sold_ts", "TIMESTAMP")),
 )
 # change column == partition column, so resolution never consults discovery results.
@@ -130,53 +110,25 @@ def changed_rows(rows: tuple[Row, ...], window: ChangeWindow) -> tuple[Row, ...]
     return tuple(r for r in rows if window.since <= r.last_upd_ts < window.until)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#37: partition timezone is neither configurable nor verified, so the UTC day is wrong",
-)
-def test_discovery_keeps_the_partition_that_holds_the_changed_row():
-    """A changed row in a New York partition day must not map to a UTC day that
-    is not its partition.
-    """
-    rows = ROWS
-    window = WINDOW
-    with _physical_table(rows) as con:
-        discovered = run_emitted_discovery(con, CONFIG, window)
-
-    assert discovered, "witness precondition: the emitted SQL must return the changed row's UTC day"
-    selection = resolve_partitions(CONFIG, window, discovered)
-    truth = {row.physical_partition_day for row in changed_rows(rows, window)}
-
-    assert truth <= set(selection.partitions), (
-        f"partitions holding changed rows {sorted(truth)} are missing from the selection "
-        f"{selection.partitions}; Kingyo resolved UTC days "
-        f"{sorted({r.utc_partition_day for r in rows})}"
-    )
+def test_discovery_refuses_non_utc_partition_day_boundary():
+    """Reject the declared New York boundary before rendering a misleading UTC query."""
+    rows = changed_rows(ROWS, WINDOW)
+    assert rows[0].physical_partition_day == date(2026, 1, 1)
+    assert rows[0].utc_partition_day == date(2026, 1, 2)
+    assert discovery_required(CONFIG, WINDOW)
+    with pytest.raises(ValueError, match=r"partition_time_zone.*UTC.*#37"):
+        replace(CONFIG, partition_time_zone="America/New_York")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#37: the same-column short circuit derives UTC days and cannot "
-    "express the partition timezone",
-)
-def test_same_column_short_circuit_keeps_the_partition_that_holds_the_changed_row():
-    """Same defect on the window-derived path: no discovery runs, so the UTC
-    assumption is the only signal.
-    """
-    # Change column == partition column, so this row changed at its own partition value.
+def test_same_column_short_circuit_refuses_non_utc_partition_day_boundary():
+    """The window-derived path must refuse the same unsupported declaration."""
     changed = datetime(2026, 1, 5, 0, 30, tzinfo=UTC)
-    rows = (Row(changed, changed),)
-    window = ChangeWindow(datetime(2026, 1, 5, tzinfo=UTC), datetime(2026, 1, 5, 1, tzinfo=UTC))
-    config = SAME_COLUMN_CONFIG
-
-    assert not discovery_required(config, window), "precondition: the short circuit must apply"
-    selection = resolve_partitions(config, window)
-    truth = {row.physical_partition_day for row in changed_rows(rows, window)}
-
-    assert truth <= set(selection.partitions), (
-        f"the short circuit selected {selection.partitions} but the changed row lives in "
-        f"{sorted(truth)}; UTC truncation shifts every partition by the zone offset"
-    )
+    row = Row(changed, changed)
+    assert row.physical_partition_day == date(2026, 1, 4)
+    assert row.utc_partition_day == date(2026, 1, 5)
+    assert not discovery_required(SAME_COLUMN_CONFIG, WINDOW)
+    with pytest.raises(ValueError, match=r"partition_time_zone.*UTC.*#37"):
+        replace(SAME_COLUMN_CONFIG, partition_time_zone="America/New_York")
 
 
 def test_utc_partitioned_table_is_unaffected_by_the_timezone_gap():

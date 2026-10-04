@@ -25,6 +25,8 @@ see [supported inputs](delta-staging.md). The remaining architecture below is a 
 Core decisions should consume ordinary data structures rather than cloud SDK
 objects. Keep network calls at adapter boundaries so tests can use synthetic data.
 Choose dependencies when implementing an adapter; the bootstrap has none.
+The offline partition config requires and validates a UTC day-boundary declaration;
+it trusts the caller's physical-table contract without adding metadata or cloud reads.
 Planning consumes a minimal string-id graph protocol; compiled graph ingestion
 can adapt to it without introducing provider or persistence dependencies.
 The comparison function consumes plain snapshot dictionaries and does no I/O;

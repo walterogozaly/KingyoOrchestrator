@@ -37,6 +37,7 @@ class PartitionConfig:
     change_column: str
     partition_column: str
     columns: tuple[ColumnSpec, ...]
+    partition_time_zone: str
     granularity: str = "day"
 
     def __post_init__(self) -> None:
@@ -46,6 +47,11 @@ class PartitionConfig:
             _identifier(part, pattern, "table component")
         _identifier(self.change_column, _COLUMN, "change_column")
         _identifier(self.partition_column, _COLUMN, "partition_column")
+        if not isinstance(self.partition_time_zone, str) or self.partition_time_zone != "UTC":
+            raise ValueError(
+                "partition_time_zone must be explicitly declared as 'UTC'; "
+                "other partition day boundaries are unsupported (#37)"
+            )
         if self.granularity != "day":
             raise ValueError("Only day partition granularity is supported")
         if not isinstance(self.columns, tuple) or not all(
