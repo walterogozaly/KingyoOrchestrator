@@ -7,8 +7,10 @@ adjacent tooling and metadata clients already use it.
 The starter includes packaging, a local configuration validator, an offline
 metadata interface with a fake reader, offline day-partition resolution, tests,
 and CI.
-Cloud integrations, polling, dependency graph planning, and execution are future work.
+Cloud integrations, polling, and execution are future work.
 All current commands run locally without credentials or cloud calls.
+The standalone [offline impact planner](docs/planning.md) proposes affected actions
+in deterministic build order from a caller-supplied dependency graph.
 
 ## Start working
 

@@ -4,7 +4,8 @@ Kingyo is intended to observe source changes, decide which downstream work may
 be affected, and eventually coordinate approved work. The current implementation
 validates local settings and offers an offline metadata contract with a fake
 reader, plus offline partition resolution and string-only discovery SQL rendering.
-The remaining architecture below is a proposed direction.
+The standalone `planning/` package proposes downstream impacts from a minimal
+graph protocol. The remaining architecture below is a proposed direction.
 
 ## Boundaries
 
@@ -14,11 +15,14 @@ The remaining architecture below is a proposed direction.
 | Metadata contract | Immutable observations and read-only reader protocol | Existing `metadata/`; see [interface](metadata.md) |
 | Core | Offline day-partition resolution; future comparison and dependency traversal | Existing `core/partitions.py`; see [partition resolution](partition-resolution.md) |
 | Adapters | Provider-specific SQL rendering; future authorized integrations | Existing `adapters/bigquery_discovery.py` renders strings only |
+| Planning | Downstream impact, build order, and dependency-path reasons | Existing pure `planning.plan`; see [contract and policy](planning.md) |
 | State | Previous observations, checkpoints, run outcomes | A local store under `state/`, data in ignored `var/` |
 
 Core decisions should consume ordinary data structures rather than cloud SDK
 objects. Keep network calls at adapter boundaries so tests can use synthetic data.
 Choose dependencies when implementing an adapter; the bootstrap has none.
+Planning consumes a minimal string-id graph protocol; compiled graph ingestion
+can adapt to it without introducing provider or persistence dependencies.
 
 ## Proposed observation flow
 
