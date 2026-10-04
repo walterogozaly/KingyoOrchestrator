@@ -140,19 +140,16 @@ def test_many_dirty_partitions_trigger_full_refresh():
     _check(dag, con, o)
 
 
-def test_scattered_update_skips_key_capture_when_child_rebuilds_anyway():
-    dag, con, o = _setup()
+def test_key_capture_skipped_when_child_rebuilds_anyway():
+    # append-only source: no row-level delta, so keyed children would get whole-partition keys
+    dag, con, o = _setup(append_only=True)
     con.execute("""INSERT INTO orders SELECT 100 + i, 1 + i % 3, i, 'ok', DATE '2026-09-20' + CAST(i AS INTEGER),
         TIMESTAMP '2026-09-20 08:00:00' + INTERVAL (i) DAY FROM range(10) t(i)""")
     o.build_all()
-    con.execute(
-        "DELETE FROM orders WHERE order_id = 101"
-    )  # an old order changes; new version lands today
-    con.execute(
-        "INSERT INTO orders VALUES (101, 2, 99.0, 'ok', DATE '2026-09-21', TIMESTAMP '2026-10-03 09:00:00')"
-    )
-    o.signal("orders", ["2026-10-03"], T)
-    # the parent stays partial (2 of 13 partitions); the keyed children's changed keys exceed 25% of rows.
+    con.execute("""INSERT INTO orders VALUES (201, 1, 5.0, 'ok', DATE '2026-10-02', TIMESTAMP '2026-10-02 19:00:00'),
+        (202, 2, 6.0, 'ok', DATE '2026-10-02', TIMESTAMP '2026-10-02 20:00:00')""")
+    o.signal("orders", ["2026-10-02"], T)
+    # the parent stays partial (1 of 13 partitions); the keyed children's changed keys exceed 25% of rows.
     # min_rows_for_cost_rules=0 makes the tiny tables count as big, which also turns content cutoff off
     rep = o.run_once(T + timedelta(hours=1), Policy(min_rows_for_cost_rules=0))
     assert any("stg_orders: partitions" in s for s in rep.steps)  # the parent itself stays partial
@@ -236,3 +233,38 @@ def test_check_reports_patterns_and_fixes():
     out = check(o)
     assert "latest_orders" in out and "keyed" in out and "outer_join" in out
     assert "fix: add bigquery.partitionBy" in out and "customers is unpartitioned" in out
+
+
+def test_row_deltas_with_key_changes_match_full_rebuild():
+    """Updates that move an order to another customer: keyed children must recompute both the old and
+    the new customer (pre- and post-image of the row-level delta)."""
+    import random
+
+    used = 0
+    for seed_ in range(20):
+        rnd = random.Random(seed_)
+        dag, con, o = _setup()
+        for step in range(5):
+            ts = f"2026-10-{3 + step:02d} {rnd.randrange(24):02d}:00:00"
+            day = ts[:10]
+            for _ in range(rnd.randrange(1, 4)):
+                oid = rnd.choice(
+                    [r[0] for r in con.execute("SELECT order_id FROM orders").fetchall()]
+                )
+                con.execute("DELETE FROM orders WHERE order_id=?", [oid])
+                con.execute(
+                    "INSERT INTO orders VALUES (?,?,?,?,?,?)",
+                    [
+                        oid,
+                        rnd.randrange(1, 5),
+                        float(rnd.randrange(1, 90)),
+                        rnd.choice(["ok", "ok", "test"]),
+                        day,
+                        ts,
+                    ],
+                )
+            o.signal("orders", [day], T)
+            rep = o.run_once(datetime(2026, 10, 9))
+            used += any("keys of changed rows" in s for s in rep.steps)
+            _check(dag, con, o)
+    assert used

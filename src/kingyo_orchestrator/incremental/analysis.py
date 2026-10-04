@@ -373,3 +373,29 @@ def _analyze_keyed(model, parent, columns) -> Strategy | None:
         return None
     pref = [k for k in sorted(keys) if k == parent.unique_key] or sorted(keys)
     return Strategy("keyed", key_col=pref[0], key_out=exposed[pref[0]])
+
+
+def row_local(model, parent) -> bool:
+    """True if every output row of `model` comes from exactly one row of `parent` (read once, no
+    GROUP BY / DISTINCT / window / aggregate / LIMIT / set operation anywhere). Then the output rows
+    that can change are exactly those whose parent row changed, which lets a row-level delta (the
+    parent's changed unique keys) stand in for whole partitions."""
+    try:
+        tree = parse_one(model.sql)
+    except Exception:
+        return False
+    ps = _short(parent.name)
+    if sum(1 for t in tree.find_all(exp.Table) if t.name == ps) != 1:
+        return False
+    if tree.find(exp.SetOperation, exp.Window, exp.AggFunc, exp.Limit, exp.Offset, exp.Qualify):
+        return False
+    for j in tree.find_all(exp.Join):  # null-extended rows have no parent row to key them by
+        side = (j.side or "").upper()
+        if side in ("RIGHT", "FULL") or (
+            side == "LEFT" and isinstance(j.this, exp.Table) and j.this.name == ps
+        ):
+            return False
+        if not isinstance(j.this, exp.Table) and j.this.find(exp.Table) is not None:
+            if any(t.name == ps for t in j.this.find_all(exp.Table)) and side == "LEFT":
+                return False
+    return not any(s.args.get("group") or s.args.get("distinct") for s in tree.find_all(exp.Select))

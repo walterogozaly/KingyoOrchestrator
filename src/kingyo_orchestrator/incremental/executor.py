@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 import duckdb
 
 from . import outer_join
-from .analysis import analyze_edge, pushdown_keys, pushdown_where
+from .analysis import analyze_edge, pushdown_keys, pushdown_where, row_local
 from .graph import Dag
 from .predicates import part_pred, value_list
 
@@ -57,6 +57,16 @@ class Report:
         self.steps.append(msg)
 
 
+SEP = "\x1f"  # binding one joined string is far faster than a list parameter of many values
+
+
+def _joined(vs):
+    return SEP.join(str(v) for v in vs)
+
+
+_SPLIT = "unnest(string_split(?, chr(31)))"
+
+
 def _lit(vs):
     return ", ".join("'" + str(v).replace("'", "''") + "'" for v in vs)
 
@@ -73,6 +83,12 @@ class Orchestrator:
         # recompute keys whose rows disappeared from those partitions (e.g. an updated row moved away)
         con.execute(
             """CREATE TABLE IF NOT EXISTS _kingyo_oldkeys(child VARCHAR, parent VARCHAR, part VARCHAR, k VARCHAR)"""
+        )
+        # row-level delta of a dirty model: the values of `col` (a key passed through from an upsert
+        # source) of the only rows that can have changed. ('*', '*') = unknown, i.e. some dirt arrived
+        # without a row delta, so whole partitions must be assumed changed.
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS _kingyo_rows(model VARCHAR, col VARCHAR, k VARCHAR, PRIMARY KEY(model, col, k))"
         )
 
     # --- state ---------------------------------------------------------
@@ -94,23 +110,51 @@ class Orchestrator:
             cache[k] = analyze_edge(child, parent, self.columns())
         return cache[k]
 
-    def _mark_many(self, model, parts, since, cols=None):
-        """cols: changed columns of `model` (None = all). Merging: union, and None (all) wins."""
+    def _mark_many(self, model, parts, since, cols=None, rows=None):
+        """cols: changed columns of `model` (None = all). Merging: union, and None (all) wins.
+        rows: (col, values) row-level delta for these marks, or None (unknown: any row may have changed)."""
         parts = list(parts)
         if not parts:
             return
+        col, ks = rows if rows is not None else ("*", ["*"])
+        self.con.execute(
+            f"INSERT INTO _kingyo_rows SELECT ?, ?, {_SPLIT} ON CONFLICT DO NOTHING",
+            [model, col, _joined(ks)],
+        )
         c = None if cols is None else ",".join(sorted(cols))
         self.con.execute(
-            "INSERT INTO _kingyo_dirty (model, part, since, cols) SELECT ?, unnest(?::VARCHAR[]), ?, ? "
+            f"INSERT INTO _kingyo_dirty (model, part, since, cols) SELECT ?, {_SPLIT}, ?, ? "
             "ON CONFLICT DO UPDATE SET since = least(_kingyo_dirty.since, excluded.since), "
             "cols = CASE WHEN _kingyo_dirty.cols IS NULL OR excluded.cols IS NULL THEN NULL ELSE "
             "array_to_string(list_sort(list_distinct(list_concat(string_split(_kingyo_dirty.cols, ','), "
             "string_split(excluded.cols, ',')))), ',') END",
-            [model, parts, since, c],
+            [model, _joined(parts), since, c],
         )
 
     def _mark(self, model, part, since, cols=None):
         self._mark_many(model, [part], since, cols)
+
+    def _row_delta(self, model):
+        """-> (col, [values]) if every pending mark of `model` came with a row-level delta, else None."""
+        cols = self.con.execute(
+            "SELECT DISTINCT col FROM _kingyo_rows WHERE model=?", [model]
+        ).fetchall()
+        if len(cols) != 1 or cols[0][0] == "*":
+            return None
+        col = cols[0][0]
+        ks = [
+            r[0]
+            for r in self.con.execute(
+                "SELECT k FROM _kingyo_rows WHERE model=?", [model]
+            ).fetchall()
+        ]
+        return col, ks
+
+    def _drop_row_delta(self, model):
+        self.con.execute(
+            "DELETE FROM _kingyo_rows WHERE model=? AND NOT EXISTS (SELECT 1 FROM _kingyo_dirty WHERE model=?)",
+            [model, model],
+        )
 
     def dirty_cols(self, model, parts=None):
         """Changed columns recorded for `model` (None = all / unknown)."""
@@ -217,6 +261,7 @@ class Orchestrator:
                         "DELETE FROM _kingyo_dirty WHERE model=? AND part IN (" + _lit(ready) + ")",
                         [name],
                     )
+                    self._drop_row_delta(name)
                     self.con.execute("COMMIT")
                 continue
             # a derived model with debt: skip if any parent is still settling (its debt may grow)
@@ -224,7 +269,8 @@ class Orchestrator:
         return rep
 
     # --- propagation: parent partitions changed -> child dirty --------------
-    def _propagate(self, parent, parts, rep, since, pre_image=True, cols=None):
+    def _propagate(self, parent, parts, rep, since, pre_image=True, cols=None, kv=None):
+        """`kv`: child -> exact changed key values for keyed children (from a row-level delta)."""
         """`pre_image=False`: the parent was rebuilt without capturing the keys of rows that left its
         partitions (too costly on a full rebuild), so key-based children cannot be exact: they get ALL."""
         pm = self.dag.models[parent]
@@ -244,6 +290,12 @@ class Orchestrator:
                         f"{parent}->{name}: changed columns {sorted(cols)} do not reach {name} -> nothing to do"
                     )
                     continue
+            if kv and name in kv and s.kind == "keyed" and None not in kv[name]:
+                self._mark_many(name, [f"@kv|{parent}|{v}" for v in sorted(kv[name])], since, ccols)
+                rep.log(
+                    f"{parent}->{name} (keyed on {s.key_col}): {len(kv[name]):,} keys of changed rows dirty"
+                )
+                continue
             forced = (name, parent) in self.__dict__.get("_force_all", set())
             if forced and s.kind in ("keyed", "outer_join"):
                 self.__dict__["_force_all"].discard((name, parent))
@@ -309,6 +361,18 @@ class Orchestrator:
                         f"{parent}->{name}: superseded versions in old partitions {sorted(old - vals)}"
                     )
                 vals |= old
+                if ALL not in parts and row_local(m, pm):
+                    ks = self.con.execute(
+                        f"SELECT DISTINCT CAST({pm.unique_key} AS VARCHAR) FROM {parent} "
+                        f"WHERE {part_pred(pm.partition_expr, parts)}"
+                    ).fetchall()
+                    self._mark_many(
+                        name, sorted(vals), since, ccols, rows=(s.key_out, [k for (k,) in ks])
+                    )
+                    rep.log(
+                        f"{parent}->{name} ({s.kind}): dirty {sorted(vals)}, {len(ks):,} changed rows"
+                    )
+                    continue
             self._mark_many(name, sorted(vals), since, ccols)
             rep.log(f"{parent}->{name} ({s.kind}): dirty {sorted(vals)}")
 
@@ -325,7 +389,12 @@ class Orchestrator:
             if d.startswith("@oj|"):
                 _, par, v = d.split("|", 2)
                 ojs.setdefault(par, []).append(v)
-        plain = {d: v for d, v in dirty.items() if not d.startswith(("@key|", "@oj|"))}
+        direct = {}  # parent -> exact key values to recompute (row-level delta of the parent)
+        for d in list(dirty):
+            if d.startswith("@kv|"):
+                _, par, v = d.split("|", 2)
+                direct.setdefault(par, []).append(v)
+        plain = {d: v for d, v in dirty.items() if not d.startswith(("@key|", "@oj|", "@kv|"))}
         full = ALL in dirty or not pe
         self.__dict__["_nk_memo"] = {}
         self.__dict__["_force_all"] = {
@@ -343,12 +412,17 @@ class Orchestrator:
             rep.log(
                 f"{name}: {len(dirty)}/{total} partitions dirty > {policy.full_refresh_ratio:.0%} -> one full refresh is cheaper"
             )
-        if big and not full and keyed:
+        if big and not full and (keyed or direct):
             rows = self.con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
-            for par, pvals in keyed.items():
-                nk = self.con.execute(
-                    f"SELECT count(*) FROM ({self._keys_sql(name, par, sorted(pvals))[1]})"
-                ).fetchone()[0]
+            for par in keyed.keys() | direct.keys():
+                pvals = sorted(keyed.get(par, []))
+                nk = len(direct.get(par, ())) + (
+                    self.con.execute(
+                        f"SELECT count(*) FROM ({self._keys_sql(name, par, pvals)[1]})"
+                    ).fetchone()[0]
+                    if pvals
+                    else 0
+                )
                 if rows and nk > policy.full_refresh_ratio * rows:
                     full = True
                     rep.log(
@@ -357,6 +431,7 @@ class Orchestrator:
                     break
         vals = sorted(plain)
         self.con.execute("BEGIN")
+        kv = {}
         try:
             if full:
                 # no pre-image capture: children that need it get ALL below
@@ -381,15 +456,27 @@ class Orchestrator:
                     # with content cutoff on, children only see partitions whose content changed, so a
                     # key count over every rewritten partition would over-trigger: decide up front only
                     # when every rewritten partition is propagated anyway
-                    caps = self._capture(name, where, None if hashed_p else policy, rep)
+                    delta = self._row_delta(name)
+                    kq = self._delta_key_queries(name, where, delta)
+                    kv = {c: {r[0] for r in self.con.execute(q).fetchall()} for c, q in kq.items()}
+                    caps = self._capture(name, where, None if hashed_p else policy, rep, skip=kq)
                     self.con.execute(f"DELETE FROM {name} {where}")
                     self.con.execute(f"INSERT INTO {name} SELECT * FROM ({sql}) t {where}")
                     self._finish_capture(caps)
+                    for c, q in kq.items():  # pre-image | post-image keys of the changed rows
+                        kv[c] |= {r[0] for r in self.con.execute(q).fetchall()}
+                    if kq:
+                        self.con.execute("DROP TABLE IF EXISTS _kingyo_delta")
                     after = self._hashes(name, pe, where) if hashed_p else {v: 1 for v in vals}
                     rep.log(f"{name}: partitions {vals} recomputed")
-                for par, pvals in keyed.items():
+                for par in sorted(keyed.keys() | direct.keys()):
                     b, a = self._refresh_keys(
-                        name, par, sorted(pvals), rep, hashed=policy.cutoff_on_partial or not big
+                        name,
+                        par,
+                        sorted(keyed.get(par, [])),
+                        rep,
+                        hashed=policy.cutoff_on_partial or not big,
+                        direct=direct.get(par),
                     )
                     for k, h in b.items():
                         before.setdefault(k, h)
@@ -402,15 +489,22 @@ class Orchestrator:
                 k for k in before.keys() | after.keys() if before.get(k) != after.get(k)
             } | extra
             since = min(dirty.values())
-            cols = self.dirty_cols(name, None if full else list(dirty))
+            everything = full or (
+                self.con.execute(
+                    "SELECT count(*) FROM _kingyo_dirty WHERE model=?", [name]
+                ).fetchone()[0]
+                == len(dirty)
+            )  # usual case: all of the model's debt was paid; avoid huge IN lists of key marks
+            cols = self.dirty_cols(name, None if everything else list(dirty))
             self.con.execute(
                 "DELETE FROM _kingyo_dirty WHERE model=?"
-                + ("" if full else f" AND part IN ({_lit(dirty)})"),
+                + ("" if everything else f" AND part IN ({_lit(dirty)})"),
                 [name],
             )
+            self._drop_row_delta(name)
             if diff:
                 rep.propagated[name] = diff
-                self._propagate(name, diff, rep, since, pre_image=not full, cols=cols)
+                self._propagate(name, diff, rep, since, pre_image=not full, cols=cols, kv=kv)
             else:
                 rep.log(f"{name}: output unchanged -> early cutoff")
             if pe:  # drop captured keys that no child still needs
@@ -424,7 +518,32 @@ class Orchestrator:
             self.con.execute("ROLLBACK")
             raise
 
-    def _capture(self, name, where, policy=None, rep=None):
+    def _delta_key_queries(self, name, where, delta):
+        """child -> query for the child's key values on the rows of `name` named by the row delta."""
+        if delta is None:
+            return {}
+        col, ks = delta
+        out = {}
+        for c in self.dag.children(name):
+            s = self._edge(self.dag.models[c], self.dag.models[name])
+            if s.kind == "keyed" and s.key_col:
+                out[c] = (
+                    f"SELECT DISTINCT CAST({s.key_col} AS VARCHAR) FROM {name} {where} "
+                    f"AND {col} IN (SELECT k FROM _kingyo_delta)"
+                )
+        if out:
+            typ = self.con.execute(
+                "SELECT data_type FROM information_schema.columns WHERE table_name=? AND column_name=?",
+                [name, col],
+            ).fetchone()[0]
+            self.con.execute(
+                f"CREATE OR REPLACE TEMP TABLE _kingyo_delta AS SELECT DISTINCT CAST(k AS {typ}) AS k "
+                f"FROM {_SPLIT} t(k)",
+                [_joined(ks)],
+            )
+        return out
+
+    def _capture(self, name, where, policy=None, rep=None, skip=()):
         """Snapshot, BEFORE `name` is rewritten in `where`, what its key-based children will need to know
         about rows that leave (keys, or child-partition values). Call `_finish_capture` right after the
         rewrite: only values that are no longer present afterwards are persisted (rows that stay are found
@@ -437,6 +556,8 @@ class Orchestrator:
             "CREATE TEMP TABLE IF NOT EXISTS _kingyo_cap(child VARCHAR, parent VARCHAR, part VARCHAR, k VARCHAR)"
         )
         for c in self.dag.children(name):
+            if c in skip:  # keys come from the row-level delta instead
+                continue
             s = self._edge(self.dag.models[c], self.dag.models[name])
             if s.kind in ("keyed", "data_dependent", "outer_join"):
                 what = {"keyed": s.key_col, "outer_join": s.plan and s.plan.b_cols[0]}.get(
@@ -527,13 +648,36 @@ class Orchestrator:
         )
         return out["changed_partitions"]
 
-    def _refresh_keys(self, name, parent, pvals, rep, hashed=True):
-        """Recompute only the keys present in the changed parent partitions; replace their old rows."""
+    def _refresh_keys(self, name, parent, pvals, rep, hashed=True, direct=None):
+        """Recompute only the keys present in the changed parent partitions (and the exact keys in
+        `direct`); replace their old rows."""
         m = self.dag.models[name]
         s, keys_q = self._keys_sql(name, parent, pvals)
-        kv = [r[0] for r in self.con.execute(keys_q).fetchall()]
+        kv = [r[0] for r in self.con.execute(keys_q).fetchall()] if pvals else []
+        if direct:
+            typ = self.con.execute(
+                "SELECT data_type FROM information_schema.columns WHERE table_name=? AND column_name=?",
+                [parent, s.key_col],
+            ).fetchone()[0]
+            kv = sorted(
+                set(kv)
+                | {
+                    r[0]
+                    for r in self.con.execute(
+                        f"SELECT DISTINCT CAST(k AS {typ}) FROM {_SPLIT} t(k)",
+                        [_joined(direct)],
+                    ).fetchall()
+                },
+                key=str,
+            )
         if len(kv) <= INLINE_KEYS:
             keys = value_list(kv)  # static literal list
+        elif direct:
+            self.con.execute(
+                f"CREATE OR REPLACE TEMP TABLE _kingyo_keys AS SELECT CAST(k AS {typ}) AS k FROM {_SPLIT} t(k)",
+                [_joined(kv)],
+            )
+            keys = "SELECT * FROM _kingyo_keys"
         else:
             self.con.execute(f"CREATE OR REPLACE TEMP TABLE _kingyo_keys AS {keys_q}")
             keys = "SELECT * FROM _kingyo_keys"
@@ -581,9 +725,10 @@ class Orchestrator:
         self._finish_capture(caps)
         after = self._hashes(name, pe, where) if hashed else {v: 1 for v in touched}
         self.con.execute("DROP TABLE _kingyo_new")
-        self.con.execute(
-            f"DELETE FROM _kingyo_oldkeys WHERE child='{name}' AND parent='{parent}' AND part IN ({_lit(pvals)})"
-        )
+        if pvals:
+            self.con.execute(
+                f"DELETE FROM _kingyo_oldkeys WHERE child='{name}' AND parent='{parent}' AND part IN ({_lit(pvals)})"
+            )
         rep.log(
             f"{name}: keyed recompute on {s.key_col} from {parent} partitions {pvals}; rows moved between partitions {touched}"
         )
