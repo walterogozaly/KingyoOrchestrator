@@ -1,0 +1,35 @@
+# Local handoffs contain private environment and infrastructure details.
+/KUMOSQL-ACCESS-HANDOFF.md
+/kingyo-handoff/
+/Initialize.txt
+/docs/local/
+
+# Credentials and machine-specific configuration.
+.env
+.env.*
+!.env.example
+/config/kingyo.toml
+*credentials*.json
+*service-account*.json
+*.pem
+*.key
+
+# Python environments, caches, and build output.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local orchestration state and generated artifacts.
+/var/
+/artifacts/
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+# Copy to config/kingyo.toml for local use. The local file is ignored by Git.
+# This starter validates configuration only; polling is not implemented yet.
+[orchestrator]
+mode = "observe"
+poll_interval_seconds = 300
+
+[bigquery]
+project = "your-gcp-project"
+location = "US"

@@ -1,0 +1,3 @@
+include config/kingyo.example.toml
+recursive-include docs *.md
+prune docs/local
