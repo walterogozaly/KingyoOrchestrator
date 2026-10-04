@@ -59,8 +59,16 @@ class PartitionConfig:
         for name in (self.change_column, self.partition_column):
             if name not in schema:
                 raise ValueError(f"Missing declared column: {name}")
-            if schema[name] != "TIMESTAMP":
-                raise ValueError(f"{name} must have declared type TIMESTAMP")
+        if schema[self.change_column] != "TIMESTAMP":
+            raise ValueError(f"{self.change_column} must have declared type TIMESTAMP")
+        if schema[self.partition_column] not in ("DATE", "TIMESTAMP"):
+            raise ValueError(f"{self.partition_column} must have declared type DATE or TIMESTAMP")
+
+    @property
+    def partition_type(self) -> str:
+        return next(
+            column.data_type for column in self.columns if column.name == self.partition_column
+        )
 
 
 @dataclass(frozen=True)
@@ -118,8 +126,14 @@ def _partition_day(value: date | datetime | None) -> date:
     )
 
 
-def _selection(days: Iterable[date]) -> PartitionSelection:
-    partitions = tuple(sorted(set(days)))
+def select_partitions(days: Iterable[date]) -> PartitionSelection:
+    """Normalize UTC day values and merge adjacent days without bridging gaps."""
+    unique: set[date] = set()
+    for day in days:
+        if type(day) is not date:
+            raise UnsupportedPartitionError("Partition days must be Python date values")
+        unique.add(day)
+    partitions = tuple(sorted(unique))
     ranges: list[DayRange] = []
     for day in partitions:
         if ranges and day.toordinal() == ranges[-1].end.toordinal() + 1:
@@ -136,13 +150,13 @@ def resolve_partitions(
 ) -> PartitionSelection:
     """Use caller-supplied discovery results or derive days for identical columns."""
     if window.is_empty:
-        return _selection(())
+        return select_partitions(())
     if config.change_column == config.partition_column:
         first = window.since.date().toordinal()
         last = (window.until - timedelta(microseconds=1)).date().toordinal()
-        return _selection(date.fromordinal(day) for day in range(first, last + 1))
+        return select_partitions(date.fromordinal(day) for day in range(first, last + 1))
     if discovered_partitions is None:
         raise ValueError(
             "Different columns require discovered_partitions; an empty iterable is valid"
         )
-    return _selection(_partition_day(value) for value in discovered_partitions)
+    return select_partitions(_partition_day(value) for value in discovered_partitions)
