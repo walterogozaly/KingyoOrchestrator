@@ -170,6 +170,40 @@ query with and without the literal partition filter, comparing bytes processed.
 This issue performs neither dry runs nor query execution, and does not rewrite
 or run downstream models.
 
+## Signal integration and partition moves
+
+`selection.partitions` is a sorted tuple of Python dates. A caller can pass these
+values to the prototype's `signal(table, partitions, observed_at)` interface;
+that prototype stores partition values as strings. This adapter does not invoke
+`signal`, execute SQL, or depend on the prototype.
+
+Discovery observes the current rows in the change window. If an update moves a
+row from one partition to another, both the old and new partition values must be
+signalled. Finding old values requires a declared single-column key and a
+caller-maintained pre-update record of key-to-partition values; the key alone
+cannot recover an overwritten value from the current source. This resolver has
+neither keys nor that state and returns only the supplied discovery dates. It
+cannot certify that this selection covers moved rows.
+
+A caller that permits partition moves must supply the old dates from that
+separate record and union them with the new dates using `select_partitions`.
+Without a declared key and old-value record (or an explicit guarantee that
+partition values never change), stop incremental selection and report unknown
+extent; the prototype's `ALL` signal is its explicit conservative fallback.
+Callers must not interpret the returned dates as an append-only guarantee. The
+resolver does not choose or submit that fallback for them. Deletes likewise need
+an independent signal because current-row discovery cannot see a vanished row.
+
+The prototype's `incremental/predicates.py::part_pred` renders filters from SQL
+partition expressions and observed values for its DuckDB execution path. This
+issue's `render_partition_filter` instead accepts validated `PartitionConfig`
+and `PartitionSelection` values and renders only raw-column BigQuery DATE or UTC
+TIMESTAMP predicates, with explicit alias and 1,000-day validation. Both merge
+contiguous TIMESTAMP days and preserve gaps. They remain separate because
+`part_pred` requires the optional SQLGlot parser and supports expression and NULL
+cases outside this adapter's supported contract. The observe-only adapter stays
+standard-library-only; no prototype execution is wired into it.
+
 ## Known limits found by audit #25
 
 Two defects are open against this module; both are tracked with witnesses in
