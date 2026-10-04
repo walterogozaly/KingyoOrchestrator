@@ -378,7 +378,10 @@ class Orchestrator:
                     where = f"WHERE {part_pred(pe, vals)}"
                     hashed_p = policy.cutoff_on_partial or not big
                     before = self._hashes(name, pe, where) if hashed_p else {v: 0 for v in vals}
-                    caps = self._capture(name, where, policy, rep)
+                    # with content cutoff on, children only see partitions whose content changed, so a
+                    # key count over every rewritten partition would over-trigger: decide up front only
+                    # when every rewritten partition is propagated anyway
+                    caps = self._capture(name, where, None if hashed_p else policy, rep)
                     self.con.execute(f"DELETE FROM {name} {where}")
                     self.con.execute(f"INSERT INTO {name} SELECT * FROM ({sql}) t {where}")
                     self._finish_capture(caps)

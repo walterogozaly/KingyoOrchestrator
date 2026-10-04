@@ -152,9 +152,31 @@ def test_scattered_update_skips_key_capture_when_child_rebuilds_anyway():
         "INSERT INTO orders VALUES (101, 2, 99.0, 'ok', DATE '2026-09-21', TIMESTAMP '2026-10-03 09:00:00')"
     )
     o.signal("orders", ["2026-10-03"], T)
+    # the parent stays partial (2 of 13 partitions); the keyed children's changed keys exceed 25% of rows.
+    # min_rows_for_cost_rules=0 makes the tiny tables count as big, which also turns content cutoff off
     rep = o.run_once(T + timedelta(hours=1), Policy(min_rows_for_cost_rules=0))
     assert any("stg_orders: partitions" in s for s in rep.steps)  # the parent itself stays partial
     assert any("skipping key capture" in s for s in rep.steps)
+    assert any("too many changed keys -> latest_status ALL dirty" in s for s in rep.steps)
+    _check(dag, con, o)
+
+
+def test_key_count_rule_waits_for_content_cutoff():
+    """With content cutoff on, rewritten partitions that did not change are not propagated, so the
+    up-front key count (which would cover all of them) must not force a full rebuild."""
+    dag, con, o = _setup()
+    con.execute("""INSERT INTO orders SELECT 100 + i, 1 + i % 3, i, 'ok', DATE '2026-09-20' + CAST(i AS INTEGER),
+        TIMESTAMP '2026-09-20 08:00:00' + INTERVAL (i) DAY FROM range(10) t(i)""")
+    o.build_all()
+    con.execute("DELETE FROM orders WHERE order_id = 101")
+    con.execute(
+        "INSERT INTO orders VALUES (101, 2, 99.0, 'ok', DATE '2026-09-21', TIMESTAMP '2026-10-03 09:00:00')"
+    )
+    o.signal("orders", ["2026-10-03"], T)
+    rep = o.run_once(
+        T + timedelta(hours=1), Policy(min_rows_for_cost_rules=0, cutoff_on_partial=True)
+    )
+    assert not any("skipping key capture" in s for s in rep.steps)
     _check(dag, con, o)
 
 
