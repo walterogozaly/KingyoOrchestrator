@@ -151,3 +151,5 @@ For a future harness `--variant` option, include variant/seed in the base-cache 
 apply it immediately after `load_sources` and before `pipeline.build_all`, and copy
 that same built base for both candidate and baseline. Do not apply it separately
 during scenario mutations. `harness.py` has no such option in this PR.
+Upstream layouts: `--layout {load_ts,order_date,unpartitioned}` changes how the fact source is partitioned
+(change column, a different business date, or none); see `upstream_layouts.py` and `results/upstream_layouts_sf0.05.md`.

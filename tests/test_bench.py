@@ -113,3 +113,31 @@ def test_compare_detects_differences(base):
     assert harness.compare(a, b, models) == []
     b.execute("UPDATE daily_revenue SET revenue = revenue + 1 WHERE rowid = 0")
     assert any("daily_revenue" in p for p in harness.compare(a, b, models))
+
+
+@pytest.mark.parametrize("layout", ["order_date", "unpartitioned"])
+def test_layout_variants_stay_correct(layout, tmp_path):
+    """Source partitioning variants change the signal, not the answer."""
+    pytest.importorskip("sqlglot")
+    import upstream_layouts
+
+    repo = upstream_layouts.make_layout_repo(harness.HERE / "ssb_repo", tmp_path / "repo", layout)
+    _write_tiny_ssb(tmp_path / "data")
+    con = harness.open_db(tmp_path / "b.duckdb")
+    ssb_data.load_sources(con, tmp_path / "data")
+    pipeline.build_all(con, pipeline.load_repo(repo))
+    con.execute("CHECKPOINT")
+    con.close()
+    wd = tmp_path / "wd"
+    wd.mkdir()
+    t = harness.run_trial(
+        tmp_path / "b.duckdb",
+        repo,
+        harness.SCENARIOS["late_updates_scattered"],
+        0,
+        wd,
+        0,
+        candidate="kingyo-prototype",
+        layout=layout,
+    )
+    assert t["status"] in ("faster", "same", "slower"), t

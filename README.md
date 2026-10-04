@@ -45,7 +45,8 @@ docs/                    Architecture and initial work sequence
 ```
 
 `core/` contains pure change comparison and offline partition decisions;
-`adapters/` renders discovery SQL as strings, and `state/` persists local checkpoints.
+`adapters/` renders discovery SQL and literal DATE/TIMESTAMP partition filters as
+strings, and `state/` persists local checkpoints.
 See [architecture](docs/architecture.md), the [metadata interface](docs/metadata.md),
 the [partition resolver and cost limits](docs/partition-resolution.md),
 the [snapshot state format](docs/state.md), the [column relevance rules](docs/column-relevance.md), the [compiled graph interface](docs/compiled-graph.md),

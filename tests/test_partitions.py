@@ -214,9 +214,12 @@ def test_unsupported_config_fails_before_rendering(changes, message):
         replace(CONFIG, **changes)
 
 
-@pytest.mark.parametrize("column", ["last_upd_ts", "order_sold_ts"])
-@pytest.mark.parametrize("data_type", ["DATE", "DATETIME", "STRING", "timestamp"])
-def test_both_columns_require_explicit_timestamp_types(column, data_type):
+@pytest.mark.parametrize(
+    "column, data_type",
+    [("last_upd_ts", kind) for kind in ("DATE", "DATETIME", "STRING", "timestamp")]
+    + [("order_sold_ts", kind) for kind in ("DATETIME", "STRING", "timestamp")],
+)
+def test_rejects_unsupported_column_types(column, data_type):
     columns = tuple(
         replace(spec, data_type=data_type) if spec.name == column else spec
         for spec in CONFIG.columns
