@@ -141,3 +141,20 @@ def test_layout_variants_stay_correct(layout, tmp_path):
         layout=layout,
     )
     assert t["status"] in ("faster", "same", "slower"), t
+
+
+def test_repeats_zero_skips_timing_but_keeps_correctness_and_work(base):
+    """The fast loop (--repeats 0) still compares outputs and counts rows; it only omits wall time."""
+    with tempfile.TemporaryDirectory() as wd:
+        t = harness.run_trial(
+            base, harness.HERE / "ssb_repo", harness.SCENARIOS["new_day"], 0, Path(wd), 0, repeats=0
+        )
+    assert t["status"] in ("faster", "same", "slower"), t
+    assert t["baseline"]["rows_scanned"] > 0
+    assert "seconds" not in t["baseline"] and "time_ratio" not in t
+    assert "| - |" in harness.summarize([t])
+
+
+def test_parallel_jobs_need_untimed_runs():
+    with pytest.raises(SystemExit):
+        harness.main(["--jobs", "2", "--repeats", "1"])

@@ -182,7 +182,7 @@ def run_trial(
         rc, wc, _ = run_side("candidate", True)
         bad = compare(rc, rb, models)
         # timing pass (unprofiled), randomized order, repeated, median
-        tb, tc = [], []
+        tb, tc = [], []  # repeats=0 skips timing: rows scanned and correctness are still exact
         rng = random.Random(order_seed)
         for _ in range(repeats):
             order = ["baseline", "candidate"]
@@ -194,19 +194,14 @@ def run_trial(
         out.update(status="failed", detail=f"{type(e).__name__}: {str(e)[:200]}")
         return out
     out.update(
-        baseline={
-            "rows_scanned": wb.rows_scanned,
-            "statements": wb.statements,
-            "seconds": statistics.median(tb),
-        },
-        candidate={
-            "rows_scanned": wc.rows_scanned,
-            "statements": wc.statements,
-            "seconds": statistics.median(tc),
-        },
+        baseline={"rows_scanned": wb.rows_scanned, "statements": wb.statements},
+        candidate={"rows_scanned": wc.rows_scanned, "statements": wc.statements},
         scan_ratio=wc.rows_scanned / max(wb.rows_scanned, 1),
-        time_ratio=statistics.median(tc) / max(statistics.median(tb), 1e-9),
     )
+    if repeats:
+        out["baseline"]["seconds"] = statistics.median(tb)
+        out["candidate"]["seconds"] = statistics.median(tc)
+        out["time_ratio"] = statistics.median(tc) / max(statistics.median(tb), 1e-9)
     if bad:
         out.update(
             status="incorrect",
@@ -236,13 +231,31 @@ def summarize(trials):
         c = lambda k, ts=ts: sum(t["status"] == k for t in ts)  # noqa: E731
         ok = [t for t in ts if t["status"] in ("faster", "same", "slower")]
         sr = f"{gmean([t['scan_ratio'] for t in ok]):.3f}" if ok else "-"
-        tr = f"{gmean([t['time_ratio'] for t in ok]):.2f}" if ok else "-"
+        timed = [t["time_ratio"] for t in ok if "time_ratio" in t]
+        tr = f"{gmean(timed):.2f}" if timed else "-"
         br = f"{int(statistics.mean(t['baseline']['rows_scanned'] for t in ok)):,}" if ok else "-"
         cr = f"{int(statistics.mean(t['candidate']['rows_scanned'] for t in ok)):,}" if ok else "-"
         lines.append(
             f"| {s} | {len(ts)} | {c('faster')} | {c('same')} | {c('slower')} | {c('incorrect')} | {c('failed')} | {c('unsupported')} | {sr} | {tr} | {br} | {cr} |"
         )
     return "\n".join(lines)
+
+
+def _one_star(args):
+    """Process-pool entry: one trial in its own scratch directory (module level so it pickles)."""
+    a, base, repo, n, seed = args
+    with tempfile.TemporaryDirectory() as wd:
+        return run_trial(
+            base,
+            repo,
+            SCENARIOS[n],
+            seed,
+            Path(wd),
+            order_seed=seed,
+            repeats=a.repeats,
+            candidate=a.candidate,
+            layout=a.layout,
+        )
 
 
 def main(argv=None):
@@ -258,9 +271,18 @@ def main(argv=None):
     ap.add_argument(
         "--layout", default="load_ts", choices=LAYOUTS, help="how the fact source is partitioned"
     )
+    ap.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="run trials in parallel processes; needs --repeats 0 because wall time is not "
+        "measured under contention (rows scanned and correctness are exact either way)",
+    )
     ap.add_argument("--cache", default=str(Path(tempfile.gettempdir()) / "kingyo_bench_cache"))
     ap.add_argument("--out", default=str(HERE / "results" / "latest"))
     a = ap.parse_args(argv)
+    if a.jobs > 1 and a.repeats:
+        ap.error("--jobs > 1 requires --repeats 0: timings taken in parallel are not paired runs")
     cache = Path(a.cache)
     cache.mkdir(parents=True, exist_ok=True)
     repo = make_layout_repo(Path(a.repo), cache / f"repo_{a.layout}", a.layout)
@@ -268,26 +290,28 @@ def main(argv=None):
     if not base.exists():
         build_base(base, repo, cache / f"ssb_sf{a.sf}", a.sf)
     names = a.scenarios or list(SCENARIOS)
+    jobs = [(n, seed) for n in names for seed in range(a.seeds)]
+
+    def show(n, seed, t):
+        print(
+            f"{n:<24} seed {seed}: {t['status']:<11} scan {t.get('scan_ratio', float('nan')):.3f} time {t.get('time_ratio', float('nan')):.2f} {t['detail'][:100]}",
+            flush=True,
+        )
+
     trials = []
-    with tempfile.TemporaryDirectory() as wd:
-        for n in names:
-            for seed in range(a.seeds):
-                t = run_trial(
-                    base,
-                    repo,
-                    SCENARIOS[n],
-                    seed,
-                    Path(wd),
-                    order_seed=seed,
-                    repeats=a.repeats,
-                    candidate=a.candidate,
-                    layout=a.layout,
-                )
+    if a.jobs > 1:
+        from concurrent.futures import ProcessPoolExecutor
+
+        with ProcessPoolExecutor(a.jobs) as ex:
+            for (n, seed), t in zip(
+                jobs, ex.map(_one_star, [(a, base, repo, *j) for j in jobs]), strict=True
+            ):
                 trials.append(t)
-                print(
-                    f"{n:<24} seed {seed}: {t['status']:<11} scan {t.get('scan_ratio', float('nan')):.3f} time {t.get('time_ratio', float('nan')):.2f} {t['detail'][:100]}",
-                    flush=True,
-                )
+                show(n, seed, t)
+    else:
+        for n, seed in jobs:
+            trials.append(_one_star((a, base, repo, n, seed)))
+            show(n, seed, trials[-1])
     md = summarize(trials)
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(str(a.out) + ".json").write_text(

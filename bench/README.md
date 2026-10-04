@@ -2,10 +2,14 @@
 
     pip install -e ".[bench]"          # duckdb + pinned benchbox (data generator)
     python bench/harness.py --sf 0.05 --seeds 5 --repeats 3 --out bench/results/run1
+    python bench/harness.py --candidate kingyo-prototype --repeats 0 --jobs 4   # fast loop: exact rows scanned + correctness, trials in parallel, no wall time (about 5x faster than --repeats 3)
     python bench/harness.py --candidate kingyo-prototype          # the in-repo incremental prototype
     python bench/harness.py --candidate kingyo-prototype-columns  # + changed-column hints (late updates, dimension change, added column)
     python -m pytest tests/test_bench.py -q   # offline, tiny hand-written data; skipped without duckdb
     python -m pytest bench -q                  # correctness checker and report tests
+
+`--jobs` needs `--repeats 0` on purpose: wall time taken while trials compete for cores is not a paired, randomized run, so the timed pass stays serial.
+Rows scanned varies by well under 1% between identical runs (DuckDB scan scheduling), so compare ratios, not exact row counts.
 
 The default candidate `full-rebuild` is a control: it must reproduce the baseline exactly with ratios near 1.
 

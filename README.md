@@ -87,9 +87,11 @@ and can compare a previous run without opening databases or contacting cloud ser
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m ruff format --check .
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q -n auto
 .\.venv\Scripts\python.exe -m build
 ```
+
+The suite is safe to run in parallel (`-n auto` uses pytest-xdist from the `dev` extra); drop the flag to run serially.
 
 ## Local information
 
